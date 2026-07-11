@@ -210,7 +210,7 @@ In the <b> MotionPlanning </b> panel on the left of RViz → <b> Context </b> ta
 
 ---
 
-## 6. Setting the Start / Goal Joint Angles (required before running planning)
+## <p align="justify">6. Setting the Start / Goal Joint Angles (required before running planning)</p>
 
 <p align="justify">
 The planner requires both a "start" and a "goal" before it can compute a collision-avoidance trajectory; these are not set automatically after RViz launches and must be specified manually:
