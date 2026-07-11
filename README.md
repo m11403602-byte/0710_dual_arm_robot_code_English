@@ -33,10 +33,36 @@ The HIWIN dual-arm manipulators (Arm A, RA610-1476, and Arm B, RA605-710, mounte
 The 6 planners all solve the same dual-arm collision-avoidance problem; they differ only in the mathematical model and solution method adopted by the inner optimization loop:
 </p>
 
-| | Newton | CG (Conjugate Gradient) | GD (Gradient Descent) |
-|---|---|---|---|
-| **ALM model** | `dual_arm_alm_newton_planner` | `dual_arm_alm_cg_planner` | `dual_arm_alm_gd_planner` |
-| **Lagrangian model** | `dual_arm_lag_newton_planner` | `dual_arm_lag_cg_planner` | `dual_arm_lag_gd_planner` |
+<table style="width:100%; table-layout: fixed;">
+  <colgroup>
+    <col style="width:22%;">
+    <col style="width:26%;">
+    <col style="width:26%;">
+    <col style="width:26%;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th align="justify"></th>
+      <th align="justify">Newton</th>
+      <th align="justify">CG (Conjugate Gradient)</th>
+      <th align="justify">GD (Gradient Descent)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><b> ALM model </b></td>
+      <td align="justify"><code>dual_arm_alm_newton_planner</code></td>
+      <td align="justify"><code>dual_arm_alm_cg_planner</code></td>
+      <td align="justify"><code>dual_arm_alm_gd_planner</code></td>
+    </tr>
+    <tr>
+      <td align="justify"><b> Lagrangian model </b></td>
+      <td align="justify"><code>dual_arm_lag_newton_planner</code></td>
+      <td align="justify"><code>dual_arm_lag_cg_planner</code></td>
+      <td align="justify"><code>dual_arm_lag_gd_planner</code></td>
+    </tr>
+  </tbody>
+</table>
 
 <p align="justify">
 ⚠️ ALM and Lagrangian are different mathematical models; their parameters must not be interchanged.
@@ -201,9 +227,27 @@ The planner requires both a "start" and a "goal" before it can compute a collisi
 <b> Built-in named poses </b> (the <code>group_state</code> entries in <code>dual_hiwin.srdf</code> , which can be selected directly from the Start/Goal State drop-down menu):
 </p>
 
-| Name | Corresponding group | Content |
-|---|---|---|
-| `Dual_ori` | `Dual_arm` (both arms) | All 12 axes at 0 (Home pose) |
+<table style="width:100%; table-layout: fixed;">
+  <colgroup>
+    <col style="width:15%;">
+    <col style="width:25%;">
+    <col style="width:60%;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th align="justify">Name</th>
+      <th align="justify">Corresponding group</th>
+      <th align="justify">Content</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><code>Dual_ori</code></td>
+      <td align="justify"><code>Dual_arm</code> (both arms)</td>
+      <td align="justify">All 12 axes at 0 (Home pose)</td>
+    </tr>
+  </tbody>
+</table>
 
 <p align="justify">
 Planning tab: set Start State to <code>&lt;current state&gt;</code> and uncheck <b> Query Start State </b>.
@@ -225,11 +269,32 @@ Joints page: adjust the target joint angles axis by axis using the sliders; this
 This project is used in conjunction with HIWIN's official driver libraries:
 </p>
 
-| Library | Description |
-|---|---|
-| [hiwin_ros2](https://github.com/HIWINCorporation/hiwin_ros2) | The official primary ROS 2 Humble library, providing the `ros2_control` hardware interface and MoveIt2 integration, supporting the RA6/RS4 series, and switchable between simulation and physical hardware. The two arms in this project are driven by this package (the `hiwin_driver` in §4 of this manual originates from this library). |
-| [hiwin_robot_client_library](https://github.com/HIWINCorporation/hiwin_robot_client_library) | An interface library encapsulating low-level communication with the robot controller, called by `hiwin_ros2`. |
-| [hiwin_ros](https://github.com/HIWINCorporation/hiwin_ros) | The legacy ROS 1 library (not ROS 2). |
+<table style="width:100%; table-layout: fixed;">
+  <colgroup>
+    <col style="width:25%;">
+    <col style="width:75%;">
+  </colgroup>
+  <thead>
+    <tr>
+      <th align="justify">Library</th>
+      <th align="justify">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><a href="https://github.com/HIWINCorporation/hiwin_ros2">hiwin_ros2</a></td>
+      <td align="justify">The official primary ROS 2 Humble library, providing the <code>ros2_control</code> hardware interface and MoveIt2 integration, supporting the RA6/RS4 series, and switchable between simulation and physical hardware. The two arms in this project are driven by this package (the <code>hiwin_driver</code> in §4 of this manual originates from this library).</td>
+    </tr>
+    <tr>
+      <td align="justify"><a href="https://github.com/HIWINCorporation/hiwin_robot_client_library">hiwin_robot_client_library</a></td>
+      <td align="justify">An interface library encapsulating low-level communication with the robot controller, called by <code>hiwin_ros2</code>.</td>
+    </tr>
+    <tr>
+      <td align="justify"><a href="https://github.com/HIWINCorporation/hiwin_ros">hiwin_ros</a></td>
+      <td align="justify">The legacy ROS 1 library (not ROS 2).</td>
+    </tr>
+  </tbody>
+</table>
 
 <p align="justify">
 This workspace's <code>hiwin_dual_arm_description</code> uses the <code>hiwin_description</code> package from the official libraries listed above; the remaining packages were developed with reference to the arm control packages of HIWIN's hiwin_ros2.
