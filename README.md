@@ -31,7 +31,7 @@ The HIWIN dual-arm manipulators (Arm A, RA610-1476, and Arm B, RA605-710, mounte
 
 The 6 planners all solve the same dual-arm collision-avoidance problem; they differ only in the mathematical model and solution method adopted by the inner optimization loop:
 
-| | Newton | CG (Conjugate Gradient) | GD (Steepest/Gradient Descent) |
+| | Newton | CG (Conjugate Gradient) | GD (Gradient Descent) |
 |---|---|---|---|
 | **ALM model** | `dual_arm_alm_newton_planner` | `dual_arm_alm_cg_planner` | `dual_arm_alm_gd_planner` |
 | **Lagrangian model** | `dual_arm_lag_newton_planner` | `dual_arm_lag_cg_planner` | `dual_arm_lag_gd_planner` |
