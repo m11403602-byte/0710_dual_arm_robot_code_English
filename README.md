@@ -227,37 +227,28 @@ The planner requires both a "start" and a "goal" before it can compute a collisi
 <b> Built-in named poses </b> (the <code>group_state</code> entries in <code>dual_hiwin.srdf</code> , which can be selected directly from the Start/Goal State drop-down menu):
 </p>
 
-<div style="width: 100%; text-align: justify;" align="justify">
-
-<table style="width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; table-layout: fixed;">
-  <colgroup>
-    <col style="width: 15%;">
-    <col style="width: 25%;">
-    <col style="width: 60%;">
-  </colgroup>
+<table width="100%">
   <thead>
-    <tr style="background-color: #f6f8fa;">
-      <th style="padding: 12px; border: 1px solid #d0d7de; text-align: justify; font-weight: bold;" align="justify">Name</th>
-      <th style="padding: 12px; border: 1px solid #d0d7de; text-align: justify; font-weight: bold;" align="justify">Corresponding group</th>
-      <th style="padding: 12px; border: 1px solid #d0d7de; text-align: justify; font-weight: bold;" align="justify">Content</th>
+    <tr>
+      <th align="center" width="20%">Name</th>
+      <th align="center" width="30%">Corresponding group</th>
+      <th align="center" width="50%">Content</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td style="padding: 12px; border: 1px solid #d0d7de; text-align: justify; vertical-align: middle;" align="justify">
+      <td align="center">
         <code>Dual_ori</code>
       </td>
-      <td style="padding: 12px; border: 1px solid #d0d7de; text-align: justify; vertical-align: middle;" align="justify">
+      <td align="center">
         <code>Dual_arm</code> (both arms)
       </td>
-      <td style="padding: 12px; border: 1px solid #d0d7de; text-align: justify; vertical-align: middle;" align="justify">
+      <td align="center">
         All 12 axes at 0 (Home pose)
       </td>
     </tr>
   </tbody>
 </table>
-
-</div>
 
 
 <p align="justify">
