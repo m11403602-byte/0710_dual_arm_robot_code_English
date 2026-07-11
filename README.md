@@ -226,8 +226,8 @@ The planner requires both a "start" and a "goal" before it can compute a collisi
 <p align="justify">
 <b> Built-in named poses </b> (the <code>group_state</code> entries in <code>dual_hiwin.srdf</code> , which can be selected directly from the Start/Goal State drop-down menu):
 </p>
-<p align="justify">
-<table style="width:100%; table-layout: fixed;">
+
+<table style="width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px;">
   <colgroup>
     <col style="width:15%;">
     <col style="width:25%;">
@@ -248,7 +248,6 @@ The planner requires both a "start" and a "goal" before it can compute a collisi
     </tr>
   </tbody>
 </table>
-</p>
 
 <p align="justify">
 Planning tab: set Start State to <code>&lt;current state&gt;</code> and uncheck <b> Query Start State </b>.
