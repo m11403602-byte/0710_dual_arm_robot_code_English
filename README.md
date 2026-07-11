@@ -1,7 +1,7 @@
 # <p align="justify"> HIWIN Dual-Arm Manipulator ROS 2 (Humble) Collision-Avoidance Path Planning User Manual </p>
 
 <p align="justify">
-This workspace (<code>~/hiwin_ws/src/</code>) contains a total of <b> 9 ROS 2 packages </b> : the robot description package `hiwin_dual_arm_description`, the MoveIt2 configuration package `hiwin_dual_arm`, the physical-hardware cross-domain bridge package `dual_arm_domain_bridge`, and 6 selectable dual-arm collision-avoidance planners. For the algorithmic derivations and parameter reference tables of each planner, please refer to their respective `README.md` and `PARAMETERS.md` files.
+This workspace (<code>~/hiwin_ws/src/</code>) contains a total of <b> 9 ROS 2 packages </b> : the robot description package <code>hiwin_dual_arm_description</code>, the MoveIt2 configuration package <code>hiwin_dual_arm</code>, the physical-hardware cross-domain bridge package <code>dual_arm_domain_bridge</code>, and 6 selectable dual-arm collision-avoidance planners. For the algorithmic derivations and parameter reference tables of each planner, please refer to their respective <code>README.md</code> and <code>PARAMETERS.md</code> files.
 </p>
 
 ---
@@ -9,7 +9,7 @@ This workspace (<code>~/hiwin_ws/src/</code>) contains a total of <b> 9 ROS 2 pa
 ## 1. What This Workspace Does
 
 <p align="justify">
-The HIWIN dual-arm manipulators (Arm A, RA610-1476, and Arm B, RA605-710, mounted face-to-face at a separation of 1400 mm) share a common workspace, and the joint trajectories of the two arms may collide with each other. The purpose of this workspace is: given the respective start and goal joint angles of the two arms, to automatically plan a joint-space trajectory in which the two arms do not collide. The collision-avoidance algorithm is packaged as a **MoveIt2 planner plugin** and is used as the `planning_plugin` within `move_group`; during physical operation, the planned trajectory is then dispatched by the cross-domain bridge layer to the respective drive ends of the two arms for execution.
+The HIWIN dual-arm manipulators (Arm A, RA610-1476, and Arm B, RA605-710, mounted face-to-face at a separation of 1400 mm) share a common workspace, and the joint trajectories of the two arms may collide with each other. The purpose of this workspace is: given the respective start and goal joint angles of the two arms, to automatically plan a joint-space trajectory in which the two arms do not collide. The collision-avoidance algorithm is packaged as a <b> MoveIt2 planner plugin </b> and is used as the `planning_plugin` within `move_group`; during physical operation, the planned trajectory is then dispatched by the cross-domain bridge layer to the respective drive ends of the two arms for execution.
 </p>
 
 ---
