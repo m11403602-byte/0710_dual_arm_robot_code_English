@@ -190,11 +190,12 @@ In the <b> MotionPlanning </b> panel on the left of RViz → <b> Context </b> ta
 The planner requires both a "start" and a "goal" before it can compute a collision-avoidance trajectory; these are not set automatically after RViz launches and must be specified manually:
 </p>
 
+
 1. <p align="justify"><b> Start </b> : in the <b> Planning </b> tab's <b> Start State </b> drop-down menu, select <code>&lt;current state&gt;</code> so that the start is the current position. At the same time, under <b> Displays → Planning Request </b> , uncheck <b> Query Start State </b> , keeping only <b> Query Goal State </b> (see the screenshot below).</p>
 
-2. <b> Goal </b> : directly drag the marker in the 3D view to the desired goal pose, or adjust it to precise angles using the sliders on the <b> Joints </b> page (12 joints: <code>big_joint_1~6</code> , <code>small_joint_1~6</code> ).
+2. <p align="justify"><b> Goal </b> : directly drag the marker in the 3D view to the desired goal pose, or adjust it to precise angles using the sliders on the <b> Joints </b> page (12 joints: <code>big_joint_1~6</code> , <code>small_joint_1~6</code> ).</p>
 
-3. Once both the start and goal are set, press <b> Plan </b>; upon successful planning, the 3D view plays the trajectory animation, and the elapsed time is printed in the log at the lower-left corner.
+3. <p align="justify">Once both the start and goal are set, press <b> Plan </b>; upon successful planning, the 3D view plays the trajectory animation, and the elapsed time is printed in the log at the lower-left corner.</p>
 
 <p align="justify">
 <b> Built-in named poses </b> (the <code>group_state</code> entries in <code>dual_hiwin.srdf</code> , which can be selected directly from the Start/Goal State drop-down menu):
