@@ -227,7 +227,7 @@ The planner requires both a "start" and a "goal" before it can compute a collisi
 <b> Built-in named poses </b> (the <code>group_state</code> entries in <code>dual_hiwin.srdf</code> , which can be selected directly from the Start/Goal State drop-down menu):
 </p>
 
-<table style="width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px;">
+<table style="width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; table-layout: fixed;">
   <colgroup>
     <col style="width:15%;">
     <col style="width:25%;">
