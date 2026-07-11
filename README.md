@@ -1,4 +1,4 @@
-# <p align="justify"> HIWIN Dual-Arm Manipulator ROS 2 (Humble) Collision-Avoidance Path Planning User Manual </p>
+# <p align="center">HIWIN Dual-Arm Manipulator ROS 2 (Humble) Collision-Avoidance Path Planning User Manual</p>
 
 <p align="justify">
 This workspace ( <code>~/hiwin_ws/src/</code> ) contains a total of <b> 9 ROS 2 packages </b> : the robot description package <code>hiwin_dual_arm_description</code> , the MoveIt2 configuration package <code>hiwin_dual_arm</code> , the physical-hardware cross-domain bridge package <code>dual_arm_domain_bridge</code> , and 6 selectable dual-arm collision-avoidance planners. For the algorithmic derivations and parameter reference tables of each planner, please refer to their respective <code>README.md</code> and <code>PARAMETERS.md</code> files.
@@ -110,7 +110,7 @@ D20  Arm B:  RA605-710  drive (hiwin_driver)
 Bridge layer (runs on the host): joint_states merging + transparent FollowJointTrajectory action relay
 ```
 
-> At the start of each terminal, first complete the **prerequisite** steps given at the beginning of that subsection (not repeated hereafter). Among these, `RMW_IMPLEMENTATION` must be identical on all three machines (a prerequisite for cross-machine communication); for `ROS_DOMAIN_ID`, first confirm the current value, then export it to the number required by that terminal.
+> <p align="justify">At the start of each terminal, first complete the **prerequisite** steps given at the beginning of that subsection (not repeated hereafter). Among these, `RMW_IMPLEMENTATION` must be identical on all three machines (a prerequisite for cross-machine communication); for `ROS_DOMAIN_ID`, first confirm the current value, then export it to the number required by that terminal.</p>
 
 ### 4.1 Host Side (Planning + Bridging, Domain 0)
 
