@@ -1,7 +1,7 @@
 # HIWIN Dual-Arm Manipulator ROS 2 (Humble) Collision-Avoidance Path Planning User Manual
 
 <p align="justify">
-This workspace (`~/hiwin_ws/src/`) contains a total of <b> 9 ROS 2 packages </b> : the robot description package `hiwin_dual_arm_description`, the MoveIt2 configuration package `hiwin_dual_arm`, the physical-hardware cross-domain bridge package `dual_arm_domain_bridge`, and 6 selectable dual-arm collision-avoidance planners. For the algorithmic derivations and parameter reference tables of each planner, please refer to their respective `README.md` and `PARAMETERS.md` files.
+This workspace (<code> ~/hiwin_ws/src/ </code>) contains a total of <b> 9 ROS 2 packages </b> : the robot description package `hiwin_dual_arm_description`, the MoveIt2 configuration package `hiwin_dual_arm`, the physical-hardware cross-domain bridge package `dual_arm_domain_bridge`, and 6 selectable dual-arm collision-avoidance planners. For the algorithmic derivations and parameter reference tables of each planner, please refer to their respective `README.md` and `PARAMETERS.md` files.
 </p>
 
 ## 1. What This Workspace Does
