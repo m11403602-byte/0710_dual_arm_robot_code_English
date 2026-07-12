@@ -85,15 +85,20 @@ All tunable parameters of this planner reside in <code>config/dual_arm_alm_cg_pl
 
 ## ALM Parameters (initial values are annotated per row; the tuning knobs for a diverging path)
 
-> <b> Tuning guide (three scenarios) </b> :
-> - <b> Divergence </b> (values blow up) → first lower <code>alm_beta_c</code> , then lower <code>alm_c_max</code> , and finally adjust <code>alm_c0</code> .
-> - <b> Fails to converge in time </b> (the outer rounds are exhausted before the target is met) → increase <code>alm_k_outer</code> .
-> - <b> Persistently unable to converge </b> (stuck in place) → first raise <code>alm_beta_c</code> , then raise <code>alm_c_max</code> .
+> <div align="justify"><b> Tuning guide (three scenarios) </b> :</div>
+> <ul>
+>   <li align="justify"><b> Divergence </b> (values blow up) → first lower <code>alm_beta_c</code> , then lower <code>alm_c_max</code> , and finally adjust <code>alm_c0</code> .</li>
+>   <li align="justify"><b> Fails to converge in time </b> (the outer rounds are exhausted before the target is met) → increase <code>alm_k_outer</code> .</li>
+>   <li align="justify"><b> Persistently unable to converge </b> (stuck in place) → first raise <code>alm_beta_c</code> , then raise <code>alm_c_max</code> .</li>
+> </ul>
 >
-> <b> How to determine which scenario applies </b> (inspect the terminal output or the summary.csv produced by export_level=1):
-> - Divergence: a divergence warning appears, ‖G‖ explodes, and the trajectory jumps erratically.
-> - Fails to converge in time: all <code>alm_k_outer</code> rounds are used up while maxD <b> is still decreasing </b> but has not yet dropped below <code>danger_threshold</code> .
-> - Persistently unable to converge: maxD <b> stalls at some value </b> for several rounds, and c has long since reached <code>alm_c_max</code> .
+> <div align="justify"><b> How to determine which scenario applies </b> (inspect the terminal output or the summary.csv produced by export_level=1):</div>
+> <ul>
+>   <li align="justify">Divergence: a divergence warning appears, ‖G‖ explodes, and the trajectory jumps erratically.</li>
+>   <li align="justify">Fails to converge in time: all <code>alm_k_outer</code> rounds are used up while maxD <b> is still decreasing </b> but has not yet dropped below <code>danger_threshold</code> .</li>
+>   <li align="justify">Persistently unable to converge: maxD <b> stalls at some value </b> for several rounds, and c has long since reached <code>alm_c_max</code> .</li>
+> </ul>
+
 
 <table width="100%">
   <thead>
