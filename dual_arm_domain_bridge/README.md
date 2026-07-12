@@ -1,80 +1,160 @@
-# dual_arm_domain_bridge — 跨域橋層（Plan B：domain 隔離）
+# <p align="center">dual_arm_domain_bridge — Cross-Domain Bridge Layer (Plan B: domain isolation)</p>
 
-## 這個 package 在做什麼
+## What This Package Does
 
-兩支 HIWIN 手臂的原廠驅動皆以「單臂」為前提：關節名一律 `joint_1`～`joint_6`（無前綴）、狀態一律發佈於 `/joint_states`、控制器一律為 `/joint_trajectory_controller`。若兩臂直接放進同一個 ROS 2 網路，關節名與 topic 必然衝突。
+<p align="justify">
+The stock drivers of both HIWIN arms assume a <b> single arm </b> : the joint names are uniformly <code>joint_1</code> ~ <code>joint_6</code> (no prefix), states are always published on <code>/joint_states</code> , and the controller is always <code>/joint_trajectory_controller</code> . If the two arms were placed directly into the same ROS 2 network, the joint names and topics would inevitably collide.
+</p>
 
-本 package 採 **domain 隔離** 解法：**手臂端跑原封不動的原廠 launch**，各自關進獨立的 ROS_DOMAIN（A 臂 D20、B 臂 D30），彼此互不可見；主機（D10）透過本橋層跨域搬運資料，並在上行時為關節名加上前綴。原廠驅動與介面契約完全不需修改。
+<p align="justify">
+This package adopts a <b> domain-isolation </b> solution: <b> the arm side runs the stock launch files entirely unmodified </b> , each confined to an independent ROS_DOMAIN (Arm A on D20, Arm B on D30) and mutually invisible; the host (D10) transports data across domains through this bridge layer, prefixing the joint names on the uplink. The stock drivers and the interface contract require no modification whatsoever.
+</p>
 
-## 組成
+## Composition
 
-兩支執行檔 + 一支 launch：
+<p align="justify">
+Two executables + one launch file:
+</p>
 
-| 程式 | 方向 | 角色 | 備註 |
-|------|------|------|------|
-| `joint_state_uplink_bridge` | 上行（眼睛） | 訂閱 D20 / D30 的 `/joint_states`，各自加前綴後合併，發佈到 D10 | **必跑**，否則主機看不到手臂 |
-| `trajectory_downlink_endpoint_relay` | 下行（手） | 將 RViz / MoveIt 的 Execute、Stop 透明轉送至各臂 | 失敗語意與直連相同 |
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="justify">Program</th>
+      <th align="justify">Direction</th>
+      <th align="justify">Role</th>
+      <th align="justify">Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><code>joint_state_uplink_bridge</code></td>
+      <td align="justify">Uplink (the "eyes")</td>
+      <td align="justify">Subscribes to the <code>/joint_states</code> of D20 / D30, prefixes each, merges them, and publishes to D10</td>
+      <td align="justify"><b> Mandatory </b> ; otherwise the host cannot see the arms</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>trajectory_downlink_endpoint_relay</code></td>
+      <td align="justify">Downlink (the "hands")</td>
+      <td align="justify">Transparently relays the Execute and Stop commands from RViz / MoveIt to each arm</td>
+      <td align="justify">The failure semantics are identical to a direct connection</td>
+    </tr>
+  </tbody>
+</table>
 
-兩支執行檔皆可用位置參數 `[host_d armA_d armB_d]` 指定 domain。
+<p align="justify">
+Both executables accept the positional arguments <code>[host_d armA_d armB_d]</code> to specify the domains.
+</p>
 
-> **重要**：domain 是程式內部以 `set_domain_id` 明碼指定的，**不吃終端機的 `ROS_DOMAIN_ID` 環境變數**。`export ROS_DOMAIN_ID=...` 對本橋層無效，要改 domain 請一律走 launch 參數或位置參數。
+> <div align="justify"><b> Important </b> : the domain is hard-coded internally via <code>set_domain_id</code> and <b> does not honor the terminal's <code>ROS_DOMAIN_ID</code> environment variable </b> . <code>export ROS_DOMAIN_ID=...</code> has no effect on this bridge layer; to change a domain, always use the launch arguments or the positional arguments.</div>
 
-## 使用前提（介面契約）
+## Prerequisites (Interface Contract)
 
-手臂端驅動須符合以下介面（HIWIN 原廠驅動即符合，無須改動）：
+<p align="justify">
+The arm-side driver must satisfy the following interface (the HIWIN stock driver already does, requiring no changes):
+</p>
 
-- 關節名：`joint_1`～`joint_6`，無前綴，單位 radian
-- 軌跡介面：`/joint_trajectory_controller/follow_joint_trajectory`
-- 狀態發佈：`/joint_states`
+<ul>
+  <li align="justify" style="margin-bottom: 8px;">Joint names: <code>joint_1</code> ~ <code>joint_6</code> , no prefix, in radians</li>
+  <li align="justify" style="margin-bottom: 8px;">Trajectory interface: <code>/joint_trajectory_controller/follow_joint_trajectory</code></li>
+  <li align="justify" style="margin-bottom: 8px;">State publishing: <code>/joint_states</code></li>
+</ul>
 
-## 快速啟動
+## Quick Start
 
-### 橋層（一鍵）
+### Bridge Layer (One Command)
 
 ```bash
-# 使用預設 domain（host=10 / armA=20 / armB=30）
+# Use the default domains (host=10 / armA=20 / armB=30)
 ros2 launch dual_arm_domain_bridge bridge_relay.launch.py
 
-# 手臂 domain 與預設不同時，以參數覆蓋（三個參數都可個別指定）
+# When the arm domains differ from the defaults, override them via arguments (each of the three can be set individually)
 ros2 launch dual_arm_domain_bridge bridge_relay.launch.py \
     host_domain:=10 arm_a_domain:=20 arm_b_domain:=30
 ```
 
-| launch 參數 | 意義 | 預設 |
-|---|---|---|
-| `host_domain` | 主機（規劃端）domain | 10 |
-| `arm_a_domain` | A 臂（RA610-1476）domain | 20 |
-| `arm_b_domain` | B 臂（RA605-710）domain | 30 |
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="justify">launch argument</th>
+      <th align="justify">Meaning</th>
+      <th align="justify">Default</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><code>host_domain</code></td>
+      <td align="justify">Host (planning side) domain</td>
+      <td align="justify">10</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>arm_a_domain</code></td>
+      <td align="justify">Arm A (RA610-1476) domain</td>
+      <td align="justify">20</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>arm_b_domain</code></td>
+      <td align="justify">Arm B (RA605-710) domain</td>
+      <td align="justify">30</td>
+    </tr>
+  </tbody>
+</table>
 
-### 全系統啟動順序
+### Full-System Startup Order
 
-依 ①→④ 順序啟動，**順序不可顛倒**（橋層啟動時手臂端必須已在線）：
+<p align="justify">
+Start in the order ①→④; <b> the order must not be reversed </b> (the arm side must already be online when the bridge layer starts):
+</p>
 
 ```
-① A 臂（RA610-1476）：於 Domain 20 依 HIWIN 提供之驅動方式啟動
-② B 臂（RA605-710） ：於 Domain 30 依 HIWIN 提供之驅動方式啟動
-③ 橋層：
+① Arm A (RA610-1476): start on Domain 20 following the driver procedure provided by HIWIN
+② Arm B (RA605-710) : start on Domain 30 following the driver procedure provided by HIWIN
+③ Bridge layer:
    ros2 launch dual_arm_domain_bridge bridge_relay.launch.py
-   （若手臂實際 domain 非 20 / 30，以 arm_a_domain / arm_b_domain 參數對應修改）
-④ 主機（D10）：
+   (if the arms' actual domains are not 20 / 30, adjust accordingly via arm_a_domain / arm_b_domain)
+④ Host (D10):
    ros2 launch hiwin_dual_arm brain.launch.py launch_rviz:=true
-   （不要再開 merger — joint_states 合併已由上行橋完成，重複開會造成雙重合併）
+   (do not launch the merger again — joint_states merging is already handled by the uplink bridge; launching it again causes double merging)
 ```
 
-### 啟動後驗證
+### Post-Startup Verification
 
-在主機（D10）確認上行是否打通：
+<p align="justify">
+On the host (D10), confirm that the uplink is functioning:
+</p>
 
 ```bash
 ros2 topic echo /joint_states --once
 ```
 
-應看到 **12 個關節**（兩臂各 6 軸、名稱已加前綴）。若只有 6 個或沒有輸出，見下方疑難排解。
+<p align="justify">
+You should see <b> 12 joints </b> (6 axes per arm, with names already prefixed). If you see only 6, or no output at all, refer to Troubleshooting below.
+</p>
 
-## 疑難排解
+## Troubleshooting
 
-| 症狀 | 原因 | 處理 |
-|---|---|---|
-| 主機看不到 `/joint_states` | 橋層未啟動，或 domain 參數與手臂實際 domain 不符 | 確認 ③ 已啟動；核對 `arm_a_domain` / `arm_b_domain` 與手臂端一致 |
-| 改了 `ROS_DOMAIN_ID` 沒效果 | 本橋層不讀環境變數（設計如此） | 改用 launch 參數或位置參數 |
-| 只看到單臂 6 個關節 | 另一臂驅動未啟動或 domain 錯 | 回到 ①② 檢查該臂 |
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="justify">Symptom</th>
+      <th align="justify">Cause</th>
+      <th align="justify">Remedy</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify">The host cannot see <code>/joint_states</code></td>
+      <td align="justify">The bridge layer is not running, or the domain arguments do not match the arms' actual domains</td>
+      <td align="justify">Confirm that step ③ is running; verify that <code>arm_a_domain</code> / <code>arm_b_domain</code> agree with the arm side</td>
+    </tr>
+    <tr>
+      <td align="justify">Changing <code>ROS_DOMAIN_ID</code> has no effect</td>
+      <td align="justify">This bridge layer does not read environment variables (by design)</td>
+      <td align="justify">Use the launch arguments or positional arguments instead</td>
+    </tr>
+    <tr>
+      <td align="justify">Only one arm's 6 joints are visible</td>
+      <td align="justify">The other arm's driver is not running, or its domain is wrong</td>
+      <td align="justify">Return to steps ①② and check that arm</td>
+    </tr>
+  </tbody>
+</table>
