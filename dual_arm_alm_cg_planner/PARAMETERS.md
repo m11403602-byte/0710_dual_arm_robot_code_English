@@ -204,8 +204,18 @@ All tunable parameters of this planner reside in <code>config/dual_arm_alm_cg_pl
   </tbody>
 </table>
 
-- <code>time_optimal: true</code> → uses TOTG to compute timestamps from the joint velocity/acceleration limits (the acceleration limits must be set in joint_limits.yaml; otherwise default values are used and a warning is printed).
-- <code>time_optimal: false</code> → equal intervals <code>dt = path_total_time / (num_points − 1)</code> , where dt is never smaller than <code>min_time_interval</code> (when there are too many points, the actual total time will exceed <code>path_total_time</code> ).
+<ul>
+  <!-- 第一個項目 -->
+  <li align="justify" style="margin-bottom: 8px;">
+    <code>time_optimal: true</code> → uses TOTG to compute timestamps from the joint velocity/acceleration limits (the acceleration limits must be set in joint_limits.yaml; otherwise default values are used and a warning is printed).
+  </li>
+
+  <!-- 第二個項目 -->
+  <li align="justify" style="margin-bottom: 8px;">
+    <code>time_optimal: false</code> → equal intervals <code>dt = path_total_time / (num_points − 1)</code> , where dt is never smaller than <code>min_time_interval</code> (when there are too many points, the actual total time will exceed <code>path_total_time</code> ).
+  </li>
+</ul>
+
 
 ---
 
