@@ -41,26 +41,26 @@ All source code (the core algorithm + the MoveIt plugin interface) is compiled i
 <table width="100%">
   <thead>
     <tr>
-      <th align="center">Component</th>
-      <th align="center">Role</th>
+      <th align="justify">Component</th>
+      <th align="justify">Role</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center"><code>cg_solver</code></td>
-      <td align="center">Layer 1: inner CG solver + FK + bounding spheres + danger factor</td>
+      <td align="justify"><code>cg_solver</code></td>
+      <td align="justify">Layer 1: inner CG solver + FK + bounding spheres + danger factor</td>
     </tr>
     <tr>
-      <td align="center"><code>avoidance_system</code></td>
-      <td align="center">Layer 2: outer collision-repair loop + Spline reconstruction</td>
+      <td align="justify"><code>avoidance_system</code></td>
+      <td align="justify">Layer 2: outer collision-repair loop + Spline reconstruction</td>
     </tr>
     <tr>
-      <td align="center"><code>data_io</code></td>
-      <td align="center">CSV writing utility (for inspecting the joint path and the evolution of the danger factor, when needed)</td>
+      <td align="justify"><code>data_io</code></td>
+      <td align="justify">CSV writing utility (for inspecting the joint path and the evolution of the danger factor, when needed)</td>
     </tr>
     <tr>
-      <td align="center"><code>planner_manager</code></td>
-      <td align="center">Layer 3: MoveIt2 PlannerManager / PlanningContext</td>
+      <td align="justify"><code>planner_manager</code></td>
+      <td align="justify">Layer 3: MoveIt2 PlannerManager / PlanningContext</td>
     </tr>
   </tbody>
 </table>
@@ -134,46 +134,46 @@ All source code (the core algorithm + the MoveIt plugin interface) is compiled i
 <table width="100%">
   <thead>
     <tr>
-      <th align="center">Variable</th>
-      <th align="center">Meaning</th>
-      <th align="center">Dimension</th>
+      <th align="justify">Variable</th>
+      <th align="justify">Meaning</th>
+      <th align="justify">Dimension</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center"><code>X</code></td>
-      <td align="center">Decision variable: the 3 interior control points of the dangerous segment × 6 axes per arm (degree)</td>
-      <td align="center">36</td>
+      <td align="justify"><code>X</code></td>
+      <td align="justify">Decision variable: the 3 interior control points of the dangerous segment × 6 axes per arm (degree)</td>
+      <td align="justify">36</td>
     </tr>
     <tr>
-      <td align="center"><code>D_m</code></td>
-      <td align="center">Danger-factor vector of the m-th control point</td>
-      <td align="center"><code>num_D_</code></td>
+      <td align="justify"><code>D_m</code></td>
+      <td align="justify">Danger-factor vector of the m-th control point</td>
+      <td align="justify"><code>num_D_</code></td>
     </tr>
     <tr>
-      <td align="center"><code>g_i(X)</code></td>
-      <td align="center">Inequality constraint: <code>D_i(X) − danger_threshold</code></td>
-      <td align="center"><code>num_C_</code> in total</td>
+      <td align="justify"><code>g_i(X)</code></td>
+      <td align="justify">Inequality constraint: <code>D_i(X) − danger_threshold</code></td>
+      <td align="justify"><code>num_C_</code> in total</td>
     </tr>
     <tr>
-      <td align="center"><code>G</code></td>
-      <td align="center">Gradient of the Lagrangian with respect to X</td>
-      <td align="center">36</td>
+      <td align="justify"><code>G</code></td>
+      <td align="justify">Gradient of the Lagrangian with respect to X</td>
+      <td align="justify">36</td>
     </tr>
     <tr>
-      <td align="center"><code>d</code></td>
-      <td align="center">CG-FR search direction</td>
-      <td align="center">36</td>
+      <td align="justify"><code>d</code></td>
+      <td align="justify">CG-FR search direction</td>
+      <td align="justify">36</td>
     </tr>
     <tr>
-      <td align="center"><code>mu</code></td>
-      <td align="center">ALM multipliers</td>
-      <td align="center"><code>num_C_</code></td>
+      <td align="justify"><code>mu</code></td>
+      <td align="justify">ALM multipliers</td>
+      <td align="justify"><code>num_C_</code></td>
     </tr>
     <tr>
-      <td align="center"><code>c</code></td>
-      <td align="center">ALM penalty parameter</td>
-      <td align="center">scalar</td>
+      <td align="justify"><code>c</code></td>
+      <td align="justify">ALM penalty parameter</td>
+      <td align="justify">scalar</td>
     </tr>
   </tbody>
 </table>
@@ -233,50 +233,50 @@ dual_arm_alm_cg_planner/
 <table width="100%">
   <thead>
     <tr>
-      <th align="center">File</th>
-      <th align="center">Function</th>
+      <th align="justify">File</th>
+      <th align="justify">Function</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center"><code>CMakeLists.txt</code></td>
-      <td align="center">Build configuration: compiles the single .so</td>
+      <td align="justify"><code>CMakeLists.txt</code></td>
+      <td align="justify">Build configuration: compiles the single .so</td>
     </tr>
     <tr>
-      <td align="center"><code>package.xml</code></td>
-      <td align="center">ROS 2 package description and dependency declarations</td>
+      <td align="justify"><code>package.xml</code></td>
+      <td align="justify">ROS 2 package description and dependency declarations</td>
     </tr>
     <tr>
-      <td align="center"><code>dual_arm_alm_cg_planner.xml</code></td>
-      <td align="center">pluginlib plugin description (enables dynamic loading by MoveIt2)</td>
+      <td align="justify"><code>dual_arm_alm_cg_planner.xml</code></td>
+      <td align="justify">pluginlib plugin description (enables dynamic loading by MoveIt2)</td>
     </tr>
     <tr>
-      <td align="center"><code>README.md</code></td>
-      <td align="center">This document</td>
+      <td align="justify"><code>README.md</code></td>
+      <td align="justify">This document</td>
     </tr>
     <tr>
-      <td align="center"><code>PARAMETERS.md</code></td>
-      <td align="center">Parameter reference table (tunable parameters)</td>
+      <td align="justify"><code>PARAMETERS.md</code></td>
+      <td align="justify">Parameter reference table (tunable parameters)</td>
     </tr>
     <tr>
-      <td align="center"><code>config/dual_arm_alm_cg_planning.yaml</code></td>
-      <td align="center">Planner parameters (must be copied to <code>hiwin_dual_arm/config/</code> )</td>
+      <td align="justify"><code>config/dual_arm_alm_cg_planning.yaml</code></td>
+      <td align="justify">Planner parameters (must be copied to <code>hiwin_dual_arm/config/</code> )</td>
     </tr>
     <tr>
-      <td align="center"><code>cg_solver.hpp/.cpp</code></td>
-      <td align="center">Layer 1: FK, bounding spheres, danger factor, ALM + CG-FR inner solve</td>
+      <td align="justify"><code>cg_solver.hpp/.cpp</code></td>
+      <td align="justify">Layer 1: FK, bounding spheres, danger factor, ALM + CG-FR inner solve</td>
     </tr>
     <tr>
-      <td align="center"><code>avoidance_system.hpp/.cpp</code></td>
-      <td align="center">Layer 2: outer collision-repair loop, Spline reconstruction, CSV export</td>
+      <td align="justify"><code>avoidance_system.hpp/.cpp</code></td>
+      <td align="justify">Layer 2: outer collision-repair loop, Spline reconstruction, CSV export</td>
     </tr>
     <tr>
-      <td align="center"><code>data_io.hpp/.cpp</code></td>
-      <td align="center">CSV writing utility</td>
+      <td align="justify"><code>data_io.hpp/.cpp</code></td>
+      <td align="justify">CSV writing utility</td>
     </tr>
     <tr>
-      <td align="center"><code>planner_manager.hpp/.cpp</code></td>
-      <td align="center">Layer 3: MoveIt2 plugin interface (radian ↔ degree, time parameterization)</td>
+      <td align="justify"><code>planner_manager.hpp/.cpp</code></td>
+      <td align="justify">Layer 3: MoveIt2 plugin interface (radian ↔ degree, time parameterization)</td>
     </tr>
   </tbody>
 </table>
@@ -338,54 +338,54 @@ The single public entry point is <code>export_unified(prefix, level)</code> . Ou
 <table width="100%">
   <thead>
     <tr>
-      <th align="center">level</th>
-      <th align="center">File</th>
-      <th align="center">Content</th>
+      <th align="justify">level</th>
+      <th align="justify">File</th>
+      <th align="justify">Content</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center"><b> 0 </b></td>
-      <td align="center">(none)</td>
-      <td align="center">Nothing is exported at all (master switch; the current yaml default)</td>
+      <td align="justify"><b> 0 </b></td>
+      <td align="justify">(none)</td>
+      <td align="justify">Nothing is exported at all (master switch; the current yaml default)</td>
     </tr>
     <tr>
-      <td align="center" rowspan="6"><b> 1 </b></td>
-      <td align="center"><code>meta.csv</code></td>
-      <td align="center">Parameter snapshot (key/value, including the five ALM parameters)</td>
+      <td align="justify" rowspan="6"><b> 1 </b></td>
+      <td align="justify"><code>meta.csv</code></td>
+      <td align="justify">Parameter snapshot (key/value, including the five ALM parameters)</td>
     </tr>
     <tr>
-      <td align="center"><code>summary.csv</code></td>
-      <td align="center">Per-round repair scoreboard (round / iteration / L / f / maxD / c_final …)</td>
+      <td align="justify"><code>summary.csv</code></td>
+      <td align="justify">Per-round repair scoreboard (round / iteration / L / f / maxD / c_final …)</td>
     </tr>
     <tr>
-      <td align="center"><code>inner.csv</code></td>
-      <td align="center">Concatenated inner-loop steps (round / inner_step / ‖G‖ / ‖d‖ / alpha)</td>
+      <td align="justify"><code>inner.csv</code></td>
+      <td align="justify">Concatenated inner-loop steps (round / inner_step / ‖G‖ / ‖d‖ / alpha)</td>
     </tr>
     <tr>
-      <td align="center"><code>danger_final.csv</code></td>
-      <td align="center">Initial vs. final per-step MaxD comparison</td>
+      <td align="justify"><code>danger_final.csv</code></td>
+      <td align="justify">Initial vs. final per-step MaxD comparison</td>
     </tr>
     <tr>
-      <td align="center"><code>danger_rounds.csv</code></td>
-      <td align="center">Long table: round / step / MaxD_in / MaxD_out</td>
+      <td align="justify"><code>danger_rounds.csv</code></td>
+      <td align="justify">Long table: round / step / MaxD_in / MaxD_out</td>
     </tr>
     <tr>
-      <td align="center"><code>targets.csv</code></td>
-      <td align="center">The 5 feature points per round (index + D value + joint angles before/after optimization)</td>
+      <td align="justify"><code>targets.csv</code></td>
+      <td align="justify">The 5 feature points per round (index + D value + joint angles before/after optimization)</td>
     </tr>
     <tr>
-      <td align="center" rowspan="3"><b> 2 </b></td>
-      <td align="center">The above 6 files + <code>constraints_all.csv</code></td>
-      <td align="center">Full constraint D-value table</td>
+      <td align="justify" rowspan="3"><b> 2 </b></td>
+      <td align="justify">The above 6 files + <code>constraints_all.csv</code></td>
+      <td align="justify">Full constraint D-value table</td>
     </tr>
     <tr>
-      <td align="center"><code>path_original.csv</code></td>
-      <td align="center">All points of the initial trajectory</td>
+      <td align="justify"><code>path_original.csv</code></td>
+      <td align="justify">All points of the initial trajectory</td>
     </tr>
     <tr>
-      <td align="center"><code>path_evolution.csv</code></td>
-      <td align="center">Long table: round / step / A1..B6 (trajectory evolution per round)</td>
+      <td align="justify"><code>path_evolution.csv</code></td>
+      <td align="justify">Long table: round / step / A1..B6 (trajectory evolution per round)</td>
     </tr>
   </tbody>
 </table>
