@@ -1,25 +1,25 @@
-// 下行: 端點層透明轉送（詳見 transparent_relay_architecture.md）
+// downlink: endpoint-layer transparent relay (see transparent_relay_architecture.md)
 //
-// 核心理念: 中間人「不替任何人作答」— 只搬運訊息 + 改 joint 名。
-//   D10 假端點(3 service + 2 topic) ←原樣轉交→ D20/D30 真 JTC 端點
-//   goal_id(UUID) 全程不換 → 無對應表; 無狀態機; 失敗語意 = 直連。
+// core idea: the middleman "answers for no one" — it only transports messages + rewrites joint names.
+//   D10 fake endpoints (3 services + 2 topics) ←forwarded verbatim→ D20/D30 real JTC endpoints
+//   goal_id(UUID) is never swapped → no mapping table; no state machine; failure semantics = direct connection.
 //
-// 設計要點:
-// (1) 延遲回覆(deferred response): D10 的 service callback 只「押單」
-//     (存號碼牌 rmw_request_id_t)即返回, executor 不被佔用;
-//     手臂的真答案到貨時(D20/D30 執行緒)憑號碼牌 send_response 補答。
-//     ⚠ 本檔唯一 API 賭注: create_service 的「帶 service 控柄之延遲回覆」
-//       callback 簽名 (service, request_header, request) — rclcpp_action
-//       內部即用此機制懸置 get_result; 若編譯不過, 改用 2 參數變體
-//       (request_header, request) + 成員存 service 控柄。
-// (2) 閉包接力: 每張請求單的下文由自己的 lambda 攜帶 → 本程式零全域可變狀態。
-// (3) 內容改寫僅兩處: send_goal 請求的 Goal 去前綴(4 欄位)、feedback 加前綴。
-// (4) status topic 必須鏡像 transient_local QoS(訂閱與發布兩側都要)。
-// (5) 快速失敗: 遠端 service 不在線 → 立即回 accepted=false / ERROR_REJECTED,
-//     補償「轉送存在會遮蔽手臂離線」的效應。
+// design points:
+// (1) deferred response: D10's service callback only "takes a ticket"
+//     (storing the ticket rmw_request_id_t) and returns immediately, so the executor is not occupied;
+//     when the arm's real answer arrives (on the D20/D30 thread) it uses the ticket to send_response with the answer.
+//     ⚠ this file's only API bet: create_service's "deferred response with a service handle"
+//       callback signature (service, request_header, request) — rclcpp_action
+//       uses this mechanism internally to suspend get_result; if it does not compile, switch to the 2-argument variant
+//       (request_header, request) + a member holding the service handle.
+// (2) closure relay: each request's context is carried by its own lambda → this program has zero global mutable state.
+// (3) content rewriting in only two places: strip the prefix from the send_goal request's Goal (4 fields), add the prefix to feedback.
+// (4) the status topic must mirror transient_local QoS (on both the subscribe and publish sides).
+// (5) fail-fast: if the remote service is not online → immediately return accepted=false / ERROR_REJECTED,
+//     compensating for the effect that "the relay's presence masks an offline arm".
 //
-// 已知限制: Result.error_string 裸關節名不翻譯; 未經實機驗證。
-// 用法: ros2 run dual_arm_domain_bridge trajectory_downlink_endpoint_relay [10 11 12]
+// known limitation: bare joint names in Result.error_string are not translated; not validated on real hardware.
+// usage: ros2 run dual_arm_domain_bridge trajectory_downlink_endpoint_relay [10 11 12]
 
 #include "dual_arm_domain_bridge/multi_context.hpp"
 
@@ -35,7 +35,7 @@ using dual_arm_domain_bridge::DomainNode;
 using dual_arm_domain_bridge::make_domain_node;
 using FJT = control_msgs::action::FollowJointTrajectory;
 
-// 五端點的實作層型別（rclcpp_action 靠它們運作, 穩定存在）
+// the implementation-layer types of the five endpoints (rclcpp_action relies on them; they exist stably)
 using SendGoalSrv = FJT::Impl::SendGoalService;
 using CancelSrv = FJT::Impl::CancelGoalService;
 using GetResultSrv = FJT::Impl::GetResultService;
@@ -52,7 +52,7 @@ std::string strip_prefix(const std::string & s, const std::string & prefix)
   return (s.rfind(prefix, 0) == 0) ? s.substr(prefix.size()) : s;
 }
 
-// 下行內容改寫: Goal 內所有關節名去前綴（4 處）
+// downlink content rewriting: strip the prefix from all joint names in the Goal (4 places)
 void strip_goal(FJT::Goal & g, const std::string & prefix)
 {
   for (auto & n : g.trajectory.joint_names) {n = strip_prefix(n, prefix);}
@@ -61,7 +61,7 @@ void strip_goal(FJT::Goal & g, const std::string & prefix)
   for (auto & n : g.multi_dof_trajectory.joint_names) {n = strip_prefix(n, prefix);}
 }
 
-// 一支手臂的五端點轉送（零全域狀態: 全靠閉包接力）
+// the five-endpoint relay for one arm (zero global state: entirely closure-driven)
 class ArmEndpointRelay
 {
 public:
@@ -72,38 +72,38 @@ public:
   {
     const std::string arm_action(kArmAction);
 
-    // ---- D20/D30 側: 對真 JTC 的 3 個 service client ----
+    // ---- D20/D30 side: the 3 service clients to the real JTC ----
     cl_send_goal_ = arm_node->create_client<SendGoalSrv>(arm_action + "/_action/send_goal");
     cl_cancel_ = arm_node->create_client<CancelSrv>(arm_action + "/_action/cancel_goal");
     cl_get_result_ = arm_node->create_client<GetResultSrv>(arm_action + "/_action/get_result");
 
-    // ---- D10 側: 假端點 service ×3（延遲回覆模式: callback 不帶 Response）----
-    // ① send_goal — 唯一要改寫請求內容的端點
+    // ---- D10 side: fake endpoint services ×3 (deferred-response mode: callback carries no Response) ----
+    // ① send_goal — the only endpoint whose request content must be rewritten
     sv_send_goal_ = host_node->create_service<SendGoalSrv>(
       host_action + "/_action/send_goal",
       [this](const std::shared_ptr<rclcpp::Service<SendGoalSrv>> srv,
              const std::shared_ptr<rmw_request_id_t> header,
              const std::shared_ptr<SendGoalSrv::Request> req)
       {
-        if (!cl_send_goal_->service_is_ready()) {       // (5) 快速失敗
-          SendGoalSrv::Response resp;                    // accepted 預設 false
+        if (!cl_send_goal_->service_is_ready()) {       // (5) fail-fast
+          SendGoalSrv::Response resp;                    // accepted defaults to false
           srv->send_response(*header, resp);
-          RCLCPP_WARN(logger_, "[%s轉送] 手臂端不在線 → 立即回 accepted=false",
+          RCLCPP_WARN(logger_, "[%s relay] arm side is offline → immediately return accepted=false",
                       prefix_.c_str());
           return;
         }
         auto fwd = std::make_shared<SendGoalSrv::Request>(*req);
-        strip_goal(fwd->goal, prefix_);                  // (3) 去前綴
-        RCLCPP_INFO(logger_, "[%s轉送] send_goal 押單轉發 (%zu 點)",
+        strip_goal(fwd->goal, prefix_);                  // (3) strip the prefix
+        RCLCPP_INFO(logger_, "[%s relay] send_goal ticketed and forwarded (%zu points)",
                     prefix_.c_str(), fwd->goal.trajectory.points.size());
         cl_send_goal_->async_send_request(
           fwd,
           [srv, header](rclcpp::Client<SendGoalSrv>::SharedFuture fut) {
-            srv->send_response(*header, *fut.get());     // 原樣轉交手臂本人的回答
+            srv->send_response(*header, *fut.get());     // forward the arm's own answer verbatim
           });
-      });                                                // ← 立即返回, 不佔 executor
+      });                                                // ← return immediately, do not occupy the executor
 
-    // ② cancel_goal — 零改寫
+    // ② cancel_goal — zero rewriting
     sv_cancel_ = host_node->create_service<CancelSrv>(
       host_action + "/_action/cancel_goal",
       [this](const std::shared_ptr<rclcpp::Service<CancelSrv>> srv,
@@ -116,18 +116,18 @@ public:
           srv->send_response(*header, resp);
           return;
         }
-        RCLCPP_WARN(logger_, "[%s轉送] cancel 押單轉發", prefix_.c_str());
+        RCLCPP_WARN(logger_, "[%s relay] cancel ticketed and forwarded", prefix_.c_str());
         cl_cancel_->async_send_request(
           std::make_shared<CancelSrv::Request>(*req),
           [srv, header, this](rclcpp::Client<CancelSrv>::SharedFuture fut) {
             srv->send_response(*header, *fut.get());
-            RCLCPP_WARN(logger_, "[%s轉送] cancel 回覆已轉交 (code=%d, 取消中 %zu 筆)",
+            RCLCPP_WARN(logger_, "[%s relay] cancel reply forwarded (code=%d, %zu in-progress cancellations)",
                         prefix_.c_str(), static_cast<int>(fut.get()->return_code),
                         fut.get()->goals_canceling.size());
           });
       });
 
-    // ③ get_result — 零改寫; 押單時長 = 整個執行期（正常, 不佔執行緒）
+    // ③ get_result — zero rewriting; the ticket is held for the entire execution period (normal, does not occupy a thread)
     sv_get_result_ = host_node->create_service<GetResultSrv>(
       host_action + "/_action/get_result",
       [this](const std::shared_ptr<rclcpp::Service<GetResultSrv>> srv,
@@ -135,22 +135,22 @@ public:
              const std::shared_ptr<GetResultSrv::Request> req)
       {
         if (!cl_get_result_->service_is_ready()) {
-          GetResultSrv::Response resp;                   // status 預設 UNKNOWN
+          GetResultSrv::Response resp;                   // status defaults to UNKNOWN
           srv->send_response(*header, resp);
           return;
         }
-        RCLCPP_INFO(logger_, "[%s轉送] get_result 押單轉發", prefix_.c_str());
+        RCLCPP_INFO(logger_, "[%s relay] get_result ticketed and forwarded", prefix_.c_str());
         cl_get_result_->async_send_request(
           std::make_shared<GetResultSrv::Request>(*req),
           [srv, header, this](rclcpp::Client<GetResultSrv>::SharedFuture fut) {
-            srv->send_response(*header, *fut.get());     // 押了整個執行期後補答
-            RCLCPP_INFO(logger_, "[%s轉送] result 已轉交 (status=%d)",
+            srv->send_response(*header, *fut.get());     // reply after holding the ticket for the entire execution period
+            RCLCPP_INFO(logger_, "[%s relay] result forwarded (status=%d)",
                         prefix_.c_str(), static_cast<int>(fut.get()->status));
           });
       });
 
-    // ---- 兩個 topic 的轉送 ----
-    // ④ feedback — 唯一要改寫的回程內容（加前綴）; goal_id 直通
+    // ---- relaying the two topics ----
+    // ④ feedback — the only return content that must be rewritten (add the prefix); goal_id passes through
     pub_feedback_ = host_node->create_publisher<FeedbackMsg>(
       host_action + "/_action/feedback", rclcpp::QoS(10));
     sub_feedback_ = arm_node->create_subscription<FeedbackMsg>(
@@ -161,7 +161,7 @@ public:
         pub_feedback_->publish(out);
       });
 
-    // ⑤ status — 零改寫; (4) transient_local QoS 兩側都要鏡像
+    // ⑤ status — zero rewriting; (4) transient_local QoS must be mirrored on both sides
     const auto status_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
     pub_status_ = host_node->create_publisher<StatusMsg>(
       host_action + "/_action/status", status_qos);
@@ -169,7 +169,7 @@ public:
       arm_action + "/_action/status", status_qos,
       [this](StatusMsg::ConstSharedPtr msg) {pub_status_->publish(*msg);});
 
-    RCLCPP_INFO(logger_, "[%s轉送] 五端點就位: %s ↔ %s",
+    RCLCPP_INFO(logger_, "[%s relay] five endpoints in place: %s ↔ %s",
                 prefix_.c_str(), host_action.c_str(), arm_action.c_str());
   }
 
@@ -218,8 +218,8 @@ int main(int argc, char ** argv)
     "/small_arm/joint_trajectory_controller/follow_joint_trajectory", "small_");
 
   RCLCPP_INFO(host.node->get_logger(),
-    "端點透明轉送啟動: D%zu 假端點 ×2 ↔ D%zu/D%zu 真 JTC | 不替人作答, UUID 直通, "
-    "失敗語意=直連", host_d, arm_a_d, arm_b_d);
+    "endpoint transparent relay started: D%zu fake endpoints ×2 ↔ D%zu/D%zu real JTC | answers for no one, UUID passthrough, "
+    "failure semantics = direct connection", host_d, arm_a_d, arm_b_d);
 
   host.start();
   armA.start();

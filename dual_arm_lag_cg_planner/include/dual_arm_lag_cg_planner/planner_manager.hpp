@@ -1,9 +1,9 @@
 // =====================================================================
-// planner_manager.hpp — 第 3 層: MoveIt2 PlannerManager/PlanningContext
+// planner_manager.hpp — Layer 3: MoveIt2 PlannerManager/PlanningContext
 // =====================================================================
-//   MoveIt2 插件介面封裝 (薄包裝, 把 AvoidanceSystem 接到 MoveIt)
-//   ⚠ 演算法內部全 degree; MoveIt 介面全 radian -> 在 solve() 邊界轉換
-//   ⚠ 關節名: A 臂 big_joint_1~6, B 臂 small_joint_1~6 (依你的 SRDF 調整)
+//   MoveIt2 plugin interface wrapper (a thin wrapper connecting AvoidanceSystem to MoveIt)
+//   ⚠ the algorithm works entirely in degrees; the MoveIt interface is entirely in radians -> convert at the solve() boundary
+//   ⚠ joint names: Arm A big_joint_1~6, Arm B small_joint_1~6 (adjust per your SRDF)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_CG_PLANNER_PLANNER_MANAGER_HPP
 #define DUAL_ARM_LAG_CG_PLANNER_PLANNER_MANAGER_HPP
@@ -22,7 +22,7 @@ namespace dual_arm_lag_cg_planner
 {
 
 // =====================================================================
-// PlanningContext: 單次規劃請求的執行單元 (solve)
+// PlanningContext: the execution unit for a single planning request (solve)
 // =====================================================================
 class DualArmPlanningContext : public planning_interface::PlanningContext
 {
@@ -31,15 +31,15 @@ public:
                          const rclcpp::Node::SharedPtr& node)
     : planning_interface::PlanningContext(name, group), node_(node) {}
 
-  // 主要規劃進入點
+  // main planning entry point
   bool solve(planning_interface::MotionPlanResponse& res) override;
-  // DetailedResponse 委託給上面 (舊版模式)
+  // DetailedResponse delegates to the above (legacy mode)
   bool solve(planning_interface::MotionPlanDetailedResponse& res) override;
 
-  bool terminate() override { return true; }   // 本規劃器不支援中途停止
+  bool terminate() override { return true; }   // this planner does not support mid-run termination
   void clear() override {}
 
-  // 從 yaml 傳入的參數
+  // parameters passed in from yaml
   double path_weight_         = 0.5;
   double danger_threshold_    = 0.4;
   double collision_tolerance_ = 0.1;
@@ -51,15 +51,15 @@ public:
   double smooth_w_neighbor_   = 1.0;
   std::string joint_prefix_A_ = "big_joint_";
   std::string joint_prefix_B_ = "small_joint_";
-  // 時間參數化
+  // time parameterization
   bool   time_optimal_      = true;
   double path_total_time_   = 20.0;
   double min_time_interval_ = 0.05;
 
-  // [NEW] 診斷輸出 (yaml 開關, 預設全關)
-  std::string export_csv_prefix_;       // 非空 → 每次規劃後匯出 CSV
-  int         export_level_   = 0;      // [NEW] 0=不匯出, 1=標配 6 檔, 2=完整 9 檔
-  // [NEW] 純 Lagrangian 參數 (預設 = Gradient_v2 值)
+  // [NEW] diagnostic output (yaml switches, all disabled by default)
+  std::string export_csv_prefix_;       // non-empty → export CSV after each planning run
+  int         export_level_   = 0;      // [NEW] 0=no export, 1=standard 6 files, 2=full 9 files
+  // [NEW] pure Lagrangian parameters (default = Gradient_v2 values)
   double lag_wd_ = 1.0; double lag_lam0_ = 30.0; double lag_s0_ = 1.0;
   double lag_tol_phys_ = 0.01; double lag_tol_stable_ = 0.01; int lag_max_iter_ = 500;
 
@@ -68,7 +68,7 @@ private:
 };
 
 // =====================================================================
-// PlannerManager: 插件入口 (MoveIt 載入這個)
+// PlannerManager: the plugin entry point (this is what MoveIt loads)
 // =====================================================================
 class DualArmLagCgPlannerManager : public planning_interface::PlannerManager
 {
@@ -76,7 +76,7 @@ public:
   DualArmLagCgPlannerManager() = default;
   ~DualArmLagCgPlannerManager() override = default;
 
-  // ⚠ 參數順序: (model, node, ns) — 舊版已驗證
+  // ⚠ parameter order: (model, node, ns) — validated in the legacy version
   bool initialize(const moveit::core::RobotModelConstPtr& model,
                   const rclcpp::Node::SharedPtr& node,
                   const std::string& parameter_namespace) override;
@@ -95,14 +95,14 @@ public:
   bool canServiceRequest(const planning_interface::MotionPlanRequest& req) const override;
 
 private:
-  // 從參數伺服器重讀所有參數 (initialize 與每次 getPlanningContext 都呼叫,
-  //   讓 yaml/rqt 改了下次規劃即生效)。const 因 getPlanningContext 是 const。
+  // re-read all parameters from the parameter server (called both in initialize and on every getPlanningContext,
+  //   so that yaml/rqt edits take effect on the next planning run). const because getPlanningContext is const.
   void load_parameters() const;
 
   rclcpp::Node::SharedPtr node_;
   moveit::core::RobotModelConstPtr robot_model_;
   std::string parameter_namespace_;
-  // mutable: load_parameters() 為 const 但需更新這些值
+  // mutable: load_parameters() is const but must update these values
   mutable double path_weight_         = 0.5;
   mutable double danger_threshold_    = 0.4;
   mutable double collision_tolerance_ = 0.1;
@@ -117,8 +117,8 @@ private:
   mutable bool   time_optimal_      = true;
   mutable double path_total_time_   = 20.0;
   mutable double min_time_interval_ = 0.05;
-  mutable std::string export_csv_prefix_;       // [NEW] 非空 → 規劃後匯出 CSV
-  mutable int         export_level_   = 0;      // [NEW] 匯出等級
+  mutable std::string export_csv_prefix_;       // [NEW] non-empty → export CSV after planning
+  mutable int         export_level_   = 0;      // [NEW] export level
   mutable double lag_wd_ = 1.0; mutable double lag_lam0_ = 30.0; mutable double lag_s0_ = 1.0;
   mutable double lag_tol_phys_ = 0.01; mutable double lag_tol_stable_ = 0.01; mutable int lag_max_iter_ = 500;
 };

@@ -1,17 +1,17 @@
 // =====================================================================
-// data_io.cpp — CSV 寫入工具實作
+// data_io.cpp — CSV writing utility implementation
 // =====================================================================
 #include "dual_arm_alm_gd_planner/data_io.hpp"
 
 #include <fstream>
 #include <iostream>
 #include <iomanip>
-#include <filesystem>   // C++17: 自動建立父資料夾
+#include <filesystem>   // C++17: automatically create the parent directory
 
 namespace dual_arm_alm_gd_planner
 {
 
-// 寫檔前確保父資料夾存在 (path 含資料夾時自動 mkdir -p)
+// ensure the parent directory exists before writing (auto mkdir -p when path contains a directory)
 static void ensure_parent_dir(const std::string& path)
 {
   try {
@@ -19,7 +19,7 @@ static void ensure_parent_dir(const std::string& path)
     if (p.has_parent_path() && !p.parent_path().empty())
       std::filesystem::create_directories(p.parent_path());
   } catch (const std::exception& e) {
-    std::cerr << "ensure_parent_dir: 建立資料夾失敗 " << path << ": " << e.what() << "\n";
+    std::cerr << "ensure_parent_dir: failed to create directory " << path << ": " << e.what() << "\n";
   }
 }
 
@@ -39,7 +39,7 @@ void write_csv(const std::string& path,
   ensure_parent_dir(path);
   std::ofstream f(path);
   if (!f.is_open()) {
-    std::cerr << "write_csv: 無法開啟 " << path << "\n";
+    std::cerr << "write_csv: cannot open " << path << "\n";
     return;
   }
   f << std::setprecision(10);
@@ -61,7 +61,7 @@ void write_csv_labeled(const std::string& path,
   ensure_parent_dir(path);
   std::ofstream f(path);
   if (!f.is_open()) {
-    std::cerr << "write_csv_labeled: 無法開啟 " << path << "\n";
+    std::cerr << "write_csv_labeled: cannot open " << path << "\n";
     return;
   }
   f << std::setprecision(10);

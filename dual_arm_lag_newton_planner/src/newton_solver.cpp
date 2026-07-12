@@ -1,10 +1,10 @@
 // =====================================================================
-// newton_solver.cpp — 第 1 層 純 Lagrangian 全維度 Newton 求解器實作
+// newton_solver.cpp — Layer 1 pure Lagrangian full-dimension Newton solver implementation
 //   = MATLAB Dual_Arm_Lagrangian_Newton_v2
 // =====================================================================
-//   幾何層 (球常數 / transmatrix / calc_df / mask / FK) 與 ALM、Newton
-//   譜系位元一致 (同一套機器人模型, 已逐項對照 v2 MATLAB 驗證)。
-//   solver 數學層 (L / G / compute_H / run_lag) 照 Newton_v2 移植。
+//   the geometry layer (sphere constants / transmatrix / calc_df / mask / FK) with ALM, Newton
+//   is bit-identical across the lineage (the same robot model, verified item by item against the v2 MATLAB).
+//   the solver math layer (L / G / compute_H / run_lag) is ported per Newton_v2.
 // =====================================================================
 #include "dual_arm_lag_newton_planner/newton_solver.hpp"
 
@@ -17,8 +17,8 @@ namespace dual_arm_lag_newton_planner
 {
 
 // =====================================================================
-// 包覆球常數 (= MATLAB robot_arm_bubble 內 arm_r/arm_p/arm_frame、ped_*)
-//   ⚠ 與 ALM/Newton 譜系位元一致 — 換機器人時六包需同步修改
+// bounding-sphere constants (= arm_r/arm_p/arm_frame, ped_* inside MATLAB robot_arm_bubble)
+//   ⚠ bit-identical to the ALM/Newton lineage — when changing the robot, all six packages must be modified in sync
 // =====================================================================
 const std::vector<BubbleDef> NewtonSolver::PEDESTAL_A = {
   { -1, 320.0,  220.0,  -65.0, 55.0 },
@@ -91,7 +91,7 @@ Eigen::Matrix4d NewtonSolver::make_translation(char axis, double dist_mm)
 }
 
 // =====================================================================
-// calc_df: 球對危險因子 sj = exp( ln(0.5)/(R_i+R_j)^2 · d^2 )
+// calc_df: sphere-pair danger factor sj = exp( ln(0.5)/(R_i+R_j)^2 · d^2 )
 // =====================================================================
 Eigen::MatrixXd NewtonSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                   const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2)
@@ -114,14 +114,14 @@ Eigen::MatrixXd NewtonSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::Ve
 }
 
 // =====================================================================
-// get_collision_masks: 16x18 跨臂 mask (連桿級 cAB 展開到球級, K_AB=180)
+// get_collision_masks: 16x18 cross-arm mask (link-level cAB expanded to sphere level, K_AB=180)
 // =====================================================================
 Eigen::Array<bool, 16, 18> NewtonSolver::get_collision_masks()
 {
-  // 球 → 連桿 ID (1-indexed, 同 MATLAB sA/sB)
+  // sphere → link ID (1-indexed, same as MATLAB sA/sB)
   static const int sA[16] = {1,1,1,1, 2, 3, 4,4,4,4, 5, 6,6,6, 7, 8};
   static const int sB[18] = {1,1,1,1,1,1,1,1, 2, 3, 4,4,4, 5, 6,6, 7, 8};
-  // [MATLAB] cAB: 連桿 1~3 (底盤/基座/L1) 全 0; 連桿 4~8 全 1
+  // [MATLAB] cAB: links 1~3 (base/pedestal/L1) all 0; links 4~8 all 1
   auto cAB = [](int rowLink, int /*colLink*/) -> bool { return rowLink >= 4; };
   Eigen::Array<bool, 16, 18> mask;
   for (int i = 0; i < 16; ++i)
@@ -131,7 +131,7 @@ Eigen::Array<bool, 16, 18> NewtonSolver::get_collision_masks()
 }
 
 // =====================================================================
-// RA610 FK: 16 球 (4 底盤 + 12 手臂) + T_ee
+// RA610 FK: 16 spheres (4 base + 12 arm) + T_ee
 // =====================================================================
 void NewtonSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                       Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
@@ -162,7 +162,7 @@ void NewtonSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const d
   for (int i = 0; i < 7; ++i) {
     T_cum = T_cum * T[i];
     for (const BubbleDef& b : BUBBLES_A) {
-      if (b.link_id == i) {   // [MATLAB] arm_frame(j) == i-1 (0-indexed 對齊)
+      if (b.link_id == i) {   // [MATLAB] arm_frame(j) == i-1 (0-indexed alignment)
         Eigen::Vector4d w = T_cum * Eigen::Vector4d(b.cx, b.cy, b.cz, 1.0);
         const int out_idx = NUM_PED + arm_k;
         bubble.row(out_idx) = w.head<3>().transpose();
@@ -175,7 +175,7 @@ void NewtonSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const d
 }
 
 // =====================================================================
-// RA605 FK: 18 球 (8 底盤 + 10 手臂) + T_ee
+// RA605 FK: 18 spheres (8 base + 10 arm) + T_ee
 // =====================================================================
 void NewtonSolver::robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const double J[6],
                                       Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
@@ -219,7 +219,7 @@ void NewtonSolver::robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const d
 }
 
 // =====================================================================
-// 建構函數 (= MATLAB Dual_Arm_Lagrangian_Newton_v2 建構函數)
+// constructor (= MATLAB Dual_Arm_Lagrangian_Newton_v2 constructor)
 // =====================================================================
 NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
                    const Eigen::Matrix4d& robotA_base,
@@ -235,11 +235,11 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
     smooth_w_(smooth_w), smooth_w_H_(smooth_w_H),
     smooth_w_T_(smooth_w_T), smooth_w_neighbor_(smooth_w_neighbor)
 {
-  // [MATLAB] M = size(X,1) - 2 (扣頭尾); N = 6
+  // [MATLAB] M = size(X,1) - 2 (excluding head and tail); N = 6
   M_ = static_cast<int>(X.rows()) - 2;
   N_ = 6;
 
-  // [MATLAB] mask → 線性索引 (column-major, 與 MATLAB logical 索引一致)
+  // [MATLAB] mask → linear indices (column-major, consistent with MATLAB logical indexing)
   Eigen::Array<bool, 16, 18> mask = get_collision_masks();
   lin_idx_AB_.clear();
   for (int col = 0; col < 18; ++col)
@@ -255,18 +255,18 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
 
   std::cout << "  [Mask] A×B: " << K_AB_ << " → num_D = " << num_D_ << "\n";
 
-  // [MATLAB] 頭尾點 X_H/X_T = [A; B]
+  // [MATLAB] head/tail points X_H/X_T = [A; B]
   X_H_.row(0) = X.row(0).segment(0, 6);
   X_H_.row(1) = X.row(0).segment(6, 6);
   X_T_.row(0) = X.row(X.rows()-1).segment(0, 6);
   X_T_.row(1) = X.row(X.rows()-1).segment(6, 6);
 
-  // [MATLAB] 中間點原始關節角 oriPos = [Xa_ori, Xb_ori] (M x 12)
+  // [MATLAB] interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
   oriPos_.resize(M_, 12);
   for (int m = 0; m < M_; ++m)
     oriPos_.row(m) = X.row(m + 1);
 
-  // [MATLAB] V_0 = [X_0; λ_0; S_0]; X_0 每點 [A1..6, B1..6]
+  // [MATLAB] V_0 = [X_0; λ_0; S_0]; X_0 each point [A1..6, B1..6]
   rebuild_initial_V_();
 
   std::cout << "  [Init] Max_D=" << compute_Dx_all(Xm_initial_.head(num_X_)).maxCoeff()
@@ -277,14 +277,14 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
 }
 
 // =====================================================================
-// rebuild_initial_V_: 以當前 oriPos / lam0_ / s0_ 重建 V_0
-//   建構子 + set_lag_params 共用 (yaml 注入後須重建)
+// rebuild_initial_V_: rebuild V_0 from the current oriPos / lam0_ / s0_
+//   shared by the constructor + set_lag_params (must be rebuilt after yaml injection)
 // =====================================================================
 void NewtonSolver::rebuild_initial_V_()
 {
   Xm_initial_.resize(total_dim_);
 
-  // X 段 (num_X): 每點 [A;B]
+  // X segment (num_X): each point [A;B]
   for (int m = 0; m < M_; ++m) {
     const int b = idx_Xm(m);
     for (int j = 0; j < 6; ++j) {
@@ -293,16 +293,16 @@ void NewtonSolver::rebuild_initial_V_()
     }
   }
 
-  // λ 段 (num_C): 全 lam0_
-  //   [MATLAB] lam_init(Dx_init>θ)=30 為 future ablation 入口; 因 lam0=30 等價全填
+  // λ segment (num_C): all lam0_
+  //   [MATLAB] lam_init(Dx_init>θ)=30 is an entry point for future ablation; since lam0=30 it is equivalent to filling all
   Xm_initial_.segment(num_X_, num_C_).setConstant(lam0_);
-  // S 段 (num_C): 全 s0_ (S² = s0_²)
+  // S segment (num_C): all s0_ (S² = s0_²)
   Xm_initial_.segment(num_X_ + num_C_, num_C_).setConstant(s0_);
 }
 
 // =====================================================================
-// compute_Dm: 第 m 點 (0-indexed) 危險因子向量 (num_D)
-//   X: num_X 維 X 向量 (非完整 V)
+// compute_Dm: the danger-factor vector at point m (0-indexed) (num_D)
+//   X: the num_X-dim X vector (not the full V)
 // =====================================================================
 Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 {
@@ -316,7 +316,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 
   Eigen::MatrixXd sj = calc_df(rA, rB, bA, bB);   // 16x18
 
-  // [MATLAB] D_m = sj(mask_AB) → column-major 取 lin_idx_AB
+  // [MATLAB] D_m = sj(mask_AB) → column-major take lin_idx_AB
   Eigen::VectorXd D_m(K_AB_);
   for (int k = 0; k < K_AB_; ++k) {
     const int idx = lin_idx_AB_[k];
@@ -325,7 +325,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
   return D_m;
 }
 
-// [MATLAB] compute_Dx_all: 全 M 點串接 (num_C)
+// [MATLAB] compute_Dx_all: concatenation over all M points (num_C)
 Eigen::VectorXd NewtonSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 {
   Eigen::VectorXd Dx(num_C_);
@@ -335,8 +335,8 @@ Eigen::VectorXd NewtonSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 }
 
 // =====================================================================
-// compute_D_cache: D_base (num_D x M) + D_plus + D_minus (中心差分快取)
-//   Newton Hessian 對角項用中心差分, 故需 D_minus; 對應 MATLAB compute_D_cache
+// compute_D_cache: D_base (num_D x M) + D_plus + D_minus (central-difference cache)
+//   the Newton Hessian diagonal uses central differences, so D_minus is needed; corresponds to MATLAB compute_D_cache
 // =====================================================================
 void NewtonSolver::compute_D_cache(const Eigen::VectorXd& V,
                                Eigen::MatrixXd& D_base,
@@ -362,7 +362,7 @@ void NewtonSolver::compute_D_cache(const Eigen::VectorXd& V,
 }
 
 // =====================================================================
-// compute_G_smooth: ∇_X f (前向差分; f 僅依賴 X)
+// compute_G_smooth: ∇_X f (forward difference; f depends only on X)
 // =====================================================================
 Eigen::VectorXd NewtonSolver::compute_G_smooth(const Eigen::VectorXd& V) const
 {
@@ -380,7 +380,7 @@ Eigen::VectorXd NewtonSolver::compute_G_smooth(const Eigen::VectorXd& V) const
 }
 
 // =====================================================================
-// compute_G: 完整 KKT 一階殘差 G = [G_X; G_λ; G_S]  (total_dim)
+// compute_G: full first-order KKT residual G = [G_X; G_λ; G_S]  (total_dim)
 //   G_X = ∇f + w_d Σ λ_i ∇D_i        (stationarity)
 //   G_λ = w_d · (D − θ + S²)          (primal feasibility)
 //   G_S = 2 w_d · S ⊙ λ              (complementarity)
@@ -419,7 +419,7 @@ Eigen::VectorXd NewtonSolver::compute_G(const Eigen::VectorXd& V,
 
 // =====================================================================
 // cost_function_L: L(V) = f(X) + w_d λᵀ (D − θ + S²)
-//   同時回傳 Dx_all (避免重複 FK)
+//   also returns Dx_all (to avoid a repeated FK)
 // =====================================================================
 double NewtonSolver::cost_function_L(const Eigen::VectorXd& V, Eigen::VectorXd& Dx_all_out) const
 {
@@ -443,11 +443,11 @@ double NewtonSolver::cost_function_F(const Eigen::VectorXd& V) const
   return f;
 }
 
-// [NEW] 拆出 fa/fb 往外傳 (= MATLAB cost_function_F 內部值, 原僅 debug 印)
+// [NEW] split out fa/fb to pass outward (= the internal values of MATLAB cost_function_F, originally only debug-printed)
 void NewtonSolver::cost_function_F_split(const Eigen::VectorXd& V,
                                      double& f, double& fa, double& fb) const
 {
-  // [MATLAB] X = reshape(V(1:num_X),12,[])'  → 第 m 列 = [Xa_m, Xb_m]
+  // [MATLAB] X = reshape(V(1:num_X),12,[])'  → row m = [Xa_m, Xb_m]
   Eigen::MatrixXd Xmat(M_, 12);
   for (int m = 0; m < M_; ++m)
     Xmat.row(m) = V.segment(idx_Xm(m), 12).transpose();
@@ -460,7 +460,7 @@ void NewtonSolver::cost_function_F_split(const Eigen::VectorXd& V,
 }
 
 // =====================================================================
-// cost_Xm: 單臂平滑成本 (position prior + 頭尾 boundary + neighbor)
+// cost_Xm: single-arm smoothing cost (position prior + head/tail boundary + neighbor)
 // =====================================================================
 double NewtonSolver::cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& Xori,
                          const Eigen::RowVectorXd& XH, const Eigen::RowVectorXd& XT) const
@@ -471,7 +471,7 @@ double NewtonSolver::cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& X
     const Eigen::RowVectorXd dv = Xa.row(m) - Xori.row(m);
     c += smooth_w_ * dv.dot(dv);
   }
-  // (2) Boundary(頭) + (3) Neighbor
+  // (2) Boundary(head) + (3) Neighbor
   for (int m = 0; m < M_; ++m) {
     if (m == 0) {
       const Eigen::RowVectorXd dH = Xa.row(0) - XH;
@@ -481,16 +481,16 @@ double NewtonSolver::cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& X
       c += smooth_w_neighbor_ * dv.dot(dv);
     }
   }
-  // (2) Boundary(尾)
+  // (2) Boundary(tail)
   const Eigen::RowVectorXd dT = Xa.row(M_ - 1) - XT;
   c += smooth_w_T_ * dT.dot(dT);
   return c;
 }
 
 // =====================================================================
-// compute_H_smooth: 平滑項 Hessian ∇²_X f (全 num_X×num_X 稠密 FD)
-//   ⚠ 非 block-diagonal: 平滑成本含鄰點項 ‖X_m−X_{m-1}‖², 故跨點耦合
-//   對角: (fp−2f0+fm)/h²;  非對角: (f(V+h_i+h_j)−fp_i−fp_j+f0)/h²
+// compute_H_smooth: smoothing-term Hessian ∇²_X f (full num_X×num_X dense FD)
+//   ⚠ not block-diagonal: the smoothing cost includes a neighbor term ‖X_m−X_{m-1}‖², hence cross-point coupling
+//   diagonal: (fp−2f0+fm)/h²;  off-diagonal: (f(V+h_i+h_j)−fp_i−fp_j+f0)/h²
 // =====================================================================
 Eigen::MatrixXd NewtonSolver::compute_H_smooth(const Eigen::VectorXd& V) const
 {
@@ -522,8 +522,8 @@ Eigen::MatrixXd NewtonSolver::compute_H_smooth(const Eigen::VectorXd& V) const
 }
 
 // =====================================================================
-// weighted_D_sum: w_d · Σ λ_m ⊙ D_m(Xm_local)  (Hessian 非對角雙擾動用)
-//   Xm_local: 該點 12 維局部關節向量 (前 6 = A, 後 6 = B)
+// weighted_D_sum: w_d · Σ λ_m ⊙ D_m(Xm_local)  (used for the Hessian off-diagonal double perturbation)
+//   Xm_local: this point's 12-dim local joint vector (first 6 = A, last 6 = B)
 // =====================================================================
 double NewtonSolver::weighted_D_sum(const Eigen::VectorXd& Xm_local,
                                     const Eigen::VectorXd& lam_m) const
@@ -543,14 +543,14 @@ double NewtonSolver::weighted_D_sum(const Eigen::VectorXd& Xm_local,
 }
 
 // =====================================================================
-// compute_H: 完整 1116×1116 9-block KKT Hessian
+// compute_H: the full 1116×1116 9-block KKT Hessian
 //        X(36)        λ(540)      S(540)
 //      ┌──────────┬──────────┬──────────┐
 //  X   │  H_XX    │  H_λX'   │    0     │
 //  λ   │  H_λX    │    0     │  H_λS    │
 //  S   │    0     │  H_λS    │  H_SS    │
 //      └──────────┴──────────┴──────────┘
-//   H_XX = H_smooth + H_collision (block-diag 12×12/點);  H_λS=diag(2S·wd); H_SS=diag(2λ·wd)
+//   H_XX = H_smooth + H_collision (block-diag 12×12/point);  H_λS=diag(2S·wd); H_SS=diag(2λ·wd)
 // =====================================================================
 Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
                                         const Eigen::MatrixXd& D_base,
@@ -563,7 +563,7 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
   const Eigen::VectorXd S      = V.segment(num_X_ + num_C_, num_C_);
 
   // --- Block 1: H_XX = H_smooth + H_collision ---
-  Eigen::MatrixXd H_XX = compute_H_smooth(V);   // 先放 H_smooth, H_collision 就地累加
+  Eigen::MatrixXd H_XX = compute_H_smooth(V);   // first place H_smooth, then accumulate H_collision in place
   for (int m = 0; m < M_; ++m) {
     const int bx = idx_Xm(m);
     const Eigen::VectorXd lam_m    = lambda.segment(idx_lam_local(m), num_D_);
@@ -579,9 +579,9 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
       for (int j = i; j < 12; ++j) {
         double val;
         if (i == j) {
-          val = (g_plus(i) - 2.0 * g_base + g_minus(i)) / (h * h);   // 對角: 中心差分
+          val = (g_plus(i) - 2.0 * g_base + g_minus(i)) / (h * h);   // diagonal: central difference
         } else {
-          Eigen::VectorXd Xpp = Xm_local;                            // 非對角: 前向-前向 (重 FK)
+          Eigen::VectorXd Xpp = Xm_local;                            // off-diagonal: forward-forward (re-FK)
           Xpp(i) += h; Xpp(j) += h;
           const double g_pp = weighted_D_sum(Xpp, lam_m);
           val = (g_pp - g_plus(i) - g_plus(j) + g_base) / (h * h);
@@ -592,7 +592,7 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
     }
   }
 
-  // --- Block 2: H_λX (Jacobian, 前向差分) ---
+  // --- Block 2: H_λX (Jacobian, forward difference) ---
   Eigen::MatrixXd H_lam_X = Eigen::MatrixXd::Zero(num_C_, num_X_);
   for (int m = 0; m < M_; ++m) {
     const int bx    = idx_Xm(m);
@@ -603,11 +603,11 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
     }
   }
 
-  // --- Block 3 & 4: 互補耦合對角 (λ→0 或 S→0 退化 → H 奇異) ---
+  // --- Block 3 & 4: complementarity coupling diagonal (λ→0 or S→0 degenerate → H singular) ---
   Eigen::VectorXd H_lam_S_diag = 2.0 * S      * wd_;
   Eigen::VectorXd H_SS_diag    = 2.0 * lambda * wd_;
 
-  // --- 9-block 拼接 ---
+  // --- 9-block assembly ---
   Eigen::MatrixXd H = Eigen::MatrixXd::Zero(total_dim_, total_dim_);
   const int oX = 0, oL = num_X_, oS = num_X_ + num_C_;
   H.block(oX, oX, num_X_, num_X_) = H_XX;
@@ -615,10 +615,10 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
   H.block(oX, oL, num_X_, num_C_) = H_lam_X.transpose();
   for (int i = 0; i < num_C_; ++i) {
     H(oL + i, oS + i) = H_lam_S_diag(i);   // H_λS
-    H(oS + i, oL + i) = H_lam_S_diag(i);   // 對稱
+    H(oS + i, oL + i) = H_lam_S_diag(i);   // symmetric
     H(oS + i, oS + i) = H_SS_diag(i);      // H_SS
   }
-  // 對稱化 (= MATLAB triu(H)+triu(H,1)'): 以上三角為準
+  // symmetrization (= MATLAB triu(H)+triu(H,1)'): take the upper triangle as authoritative
   for (int i = 0; i < total_dim_; ++i)
     for (int j = 0; j < i; ++j) H(i, j) = H(j, i);
 
@@ -626,8 +626,8 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
 }
 
 // =====================================================================
-// run_lag: 主迴圈 (全維度 Newton: d=-H\G LDLT, α=1 純步)
-//   = MATLAB Dual_Arm_Lagrangian_Newton_v2.run_newton (C++ 更名 run_lag)
+// run_lag: the main loop (full-dimension Newton: d=-H\G LDLT, α=1 pure step)
+//   = MATLAB Dual_Arm_Lagrangian_Newton_v2.run_newton (renamed run_lag in C++)
 // =====================================================================
 SolverLog NewtonSolver::run_lag()
 {
@@ -636,7 +636,7 @@ SolverLog NewtonSolver::run_lag()
   Eigen::VectorXd Xn     = Xm_initial_;
   Eigen::VectorXd pre_Xn = Xn;
 
-  // 初始狀態
+  // initial state
   Eigen::VectorXd Dx_init;
   double opt_L = cost_function_L(Xn, Dx_init);
   double max_D_curr = Dx_init.maxCoeff();
@@ -649,19 +649,19 @@ SolverLog NewtonSolver::run_lag()
   int it = 0;
 
   for (it = 1; it <= max_solver_iter_; ++it) {
-    // Step 1: FK 擾動快取 (Newton 需 D_minus 做 Hessian 中心差分)
+    // Step 1: FK perturbation cache (Newton needs D_minus for the Hessian central difference)
     Eigen::MatrixXd D_base;
     std::vector<Eigen::MatrixXd> D_plus, D_minus;
     compute_D_cache(Xn, D_base, D_plus, D_minus);
 
-    // Step 1.5: 組 1116×1116 KKT Hessian
+    // Step 1.5: assemble the 1116×1116 KKT Hessian
     const Eigen::MatrixXd H = compute_H(Xn, D_base, D_plus, D_minus);
 
-    // Step 2: 梯度 G = ∇L  (KKT 殘差)
+    // Step 2: gradient G = ∇L  (KKT residual)
     Eigen::VectorXd G = compute_G(Xn, D_base, D_plus);
     const double G_norm = G.norm();
 
-    // cond(H) 診斷 (僅 verbose 計算; 不影響優化結果, 純資訊)
+    // cond(H) diagnostic (computed only when verbose; does not affect the optimization result, purely informational)
     double cond_H = std::nan("");
     if (verbose_log_) {
       Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(H, Eigen::EigenvaluesOnly);
@@ -670,33 +670,33 @@ SolverLog NewtonSolver::run_lag()
       cond_H = (mn > 0.0) ? (ev.maxCoeff() / mn) : std::numeric_limits<double>::infinity();
     }
 
-    // Step 3: Newton 方向 d = -H⁻¹G
-    //   ⚠ 單一變更點: KKT 為不定鞍點, MATLAB `\` 用 Bunch-Kaufman LDLᵀ;
-    //     此處依規格用 Eigen LDLT (對不定矩陣可能不穩 — 已知/預期, 文件記載)。
-    //     若需更貼近 MATLAB `\`, 可改 H.fullPivLu().solve(G) (一行)。
+    // Step 3: Newton direction d = -H⁻¹G
+    //   ⚠ single point of change: the KKT system is an indefinite saddle point; MATLAB `\` uses Bunch-Kaufman LDLᵀ;
+    //     here, per specification, Eigen LDLT is used (may be unstable for indefinite matrices — known/expected, documented).
+    //     if a closer match to MATLAB `\` is needed, switch to H.fullPivLu().solve(G) (one line).
     Eigen::VectorXd d = -H.ldlt().solve(G);
     // auto solver = H.ldlt();
-    // Eigen::VectorXd d; // 1. 在外部宣告變數
+    // Eigen::VectorXd d; // 1. declare the variable externally
 
-    // // 檢查矩陣是否可逆/分解是否成功
+    // // check whether the matrix is invertible / the decomposition succeeded
     // if (solver.info() == Eigen::Success) 
     // {
-    //     d = -solver.solve(G); // 2. 直接賦值，不要重複寫 Eigen::VectorXd
-    //     std::cout << "求解成功！" << std::endl;
+    //     d = -solver.solve(G); // 2. assign directly, do not re-declare Eigen::VectorXd
+    //     std::cout << "solve succeeded!" << std::endl;
     // } 
     // else 
     // {
-    //     std::cout << "ldlt 分解失敗，矩陣可能接近奇異！啟用 SVD 備用方案..." << std::endl;
-    //     // 3. 同樣直接賦值
+    //     std::cout << "ldlt decomposition failed, the matrix may be near-singular! enabling the SVD fallback..." << std::endl;
+    //     // 3. likewise assign directly
     //     d = -H.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(G); 
     // }
     //Eigen::VectorXd d = -H.fullPivLu().solve(G);
     //Eigen::VectorXd d = -H.bdcSvd(Eigen::ComputeThinU|Eigen::ComputeThinV).solve(G);
     const double d_norm = d.norm();
 
-    // Step 4: 發散偵測 (⚠ Newton 僅判 NaN/Inf; MATLAB 的 d_norm≥1e30 為註解狀態)
+    // Step 4: divergence detection (⚠ Newton only checks NaN/Inf; MATLAB's d_norm≥1e30 is commented out)
     if (!d.allFinite()) {
-      std::cout << "\n  ★ 發散! iter=" << it << " ||G||=" << G_norm
+      std::cout << "\n  ★ divergence! iter=" << it << " ||G||=" << G_norm
                 << " ||d||=" << d_norm << " cond(H)≈" << cond_H << "\n";
       log.diverge_iter = it;
       log.G_norm_history.push_back(G_norm);
@@ -704,23 +704,23 @@ SolverLog NewtonSolver::run_lag()
       break;
     }
 
-    // Step 5: α = 1 純 Newton 步 (無線搜索)
+    // Step 5: α = 1 pure Newton step (no line search)
     const double a = 1.0;
     const int  ls_inner = 1; const bool ls_fb = false;
 
-    // Step 6: 更新 V 並評估
+    // Step 6: update V and evaluate
     Xn = pre_Xn + a * d;
     opt_L = cost_function_L(Xn, Dx);
     max_D_curr = Dx.maxCoeff();
 
-    // Step 7: 滾動歷史
+    // Step 7: roll the history
     pre_Xn = Xn;
 
-    // Step 8: 拆 V 分量
+    // Step 8: split the V components
     const Eigen::VectorXd lam_part = Xn.segment(num_X_, num_C_);
     const Eigen::VectorXd S_part   = Xn.segment(num_X_ + num_C_, num_C_);
 
-    // Step 9: KKT 殘差 + 成本拆解 (L/f/fa/fb 往外傳)
+    // Step 9: KKT residual + cost breakdown (L/f/fa/fb passed outward)
     const Eigen::VectorXd G_X_part = G.head(num_X_);
     const Eigen::VectorXd h_vec =
         (Dx.array() - danger_threshold_ + S_part.array().square()).matrix();
@@ -740,7 +740,7 @@ SolverLog NewtonSolver::run_lag()
     const int    active_cnt = static_cast<int>((lam_part.array() > 1e-6).count());
     const int    viol_cnt   = static_cast<int>((Dx.array() > danger_threshold_).count());
 
-    // Step 10: 顯示
+    // Step 10: display
     std::cout << "  [" << it << "] L:" << opt_L << " (f:" << f_now
               << "+pen:" << penalty << ") | MaxD:" << max_D_curr
               << " | |G|=" << G_norm << " |d|=" << d_norm
@@ -750,7 +750,7 @@ SolverLog NewtonSolver::run_lag()
               << " S=[" << S_part.maxCoeff() << "," << S_part.minCoeff() << "]"
               << " α:" << a << "\n";
 
-    // Step 11: 寫 log (恆寫純量歷史, 供 export)
+    // Step 11: write the log (always write the scalar history, for export)
     log.L_history.push_back(opt_L);
     log.f_history.push_back(f_now);
     log.fa_history.push_back(fa_now);
@@ -778,25 +778,25 @@ SolverLog NewtonSolver::run_lag()
     log.ls_fallback_history.push_back(ls_fb ? 1 : 0);
     log.cond_H_history.push_back(cond_H);
 
-    // Step 12: 收斂判定 (⚠ Newton: phys_ok && stable_ok && stat_ok)
-    //   stat_ok 用完整 ‖G‖ (非 r_stat); Newton 解 KKT → ‖G‖ 可驅近 0
+    // Step 12: convergence check (⚠ Newton: phys_ok && stable_ok && stat_ok)
+    //   stat_ok uses the full ‖G‖ (not r_stat); Newton solves the KKT → ‖G‖ can be driven near 0
     const bool phys_ok   = max_D_curr <= danger_threshold_ + TOL_PHYS_MARGIN_;
     const bool stable_ok = std::abs(max_D_curr - max_D_pre) <= TOL_STABLE_;
     const bool stat_ok   = G_norm <= TOL_STAT_;
     if (phys_ok && stable_ok && stat_ok) {
-      std::cout << "\n  ★ 收斂! iter=" << it << " max_D=" << max_D_curr
+      std::cout << "\n  ★ converged! iter=" << it << " max_D=" << max_D_curr
                 << " |ΔmaxD|=" << std::abs(max_D_curr - max_D_pre) << "\n";
       log.converge_iter = it;
       break;
     }
 
     if (it == max_solver_iter_)
-      std::cout << "\n  ⚠ 達最大迭代 " << it << ", max_D=" << max_D_curr << " (未收斂)\n";
+      std::cout << "\n  ⚠ reached the maximum iterations " << it << ", max_D=" << max_D_curr << " (not converged)\n";
 
     max_D_pre = max_D_curr;
   }
 
-  // 收尾
+  // wrap-up
   const int actual_iter = std::min(it, max_solver_iter_);
   log.total_iter = actual_iter;
 
@@ -808,17 +808,17 @@ SolverLog NewtonSolver::run_lag()
   log.max_D_final     = log.final_D.maxCoeff();
   log.violation_final = static_cast<int>((log.final_D.array() > danger_threshold_).count());
 
-  std::cout << "\n========== Newton v2 結果摘要 ==========\n"
-            << "  總迭代: " << actual_iter << " / " << max_solver_iter_ << "\n";
+  std::cout << "\n========== Newton v2 result summary ==========\n"
+            << "  total iterations: " << actual_iter << " / " << max_solver_iter_ << "\n";
   if (log.converge_iter > 0)
-    std::cout << "  狀態: ✅ 收斂於 iter " << log.converge_iter << "\n";
+    std::cout << "  status: ✅ converged at iter " << log.converge_iter << "\n";
   else if (log.diverge_iter > 0)
-    std::cout << "  狀態: ❌ 發散於 iter " << log.diverge_iter << "\n";
+    std::cout << "  status: ❌ diverged at iter " << log.diverge_iter << "\n";
   else
-    std::cout << "  狀態: ⚠ 達上限未收斂\n";
-  std::cout << "  max_D: 初 " << log.max_D_init << " → 末 " << log.max_D_final
+    std::cout << "  status: ⚠ reached the limit without converging\n";
+  std::cout << "  max_D: initial " << log.max_D_init << " → final " << log.max_D_final
             << " (θ=" << danger_threshold_ << ")\n"
-            << "  Violations: 初 " << log.violation_init << " → 末 "
+            << "  Violations: initial " << log.violation_init << " → final "
             << log.violation_final << " / " << num_C_ << "\n"
             << "===========================================\n\n";
 

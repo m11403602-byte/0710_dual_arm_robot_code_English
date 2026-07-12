@@ -1,5 +1,5 @@
 // =====================================================================
-// gd_solver.cpp — 第 1 層 GD 求解器實作 (= MATLAB Dual_Arm_Inequality_ALM_GD_v6)
+// gd_solver.cpp — Layer 1 GD solver implementation (= MATLAB Dual_Arm_Inequality_ALM_GD_v6)
 // =====================================================================
 #include "dual_arm_alm_gd_planner/gd_solver.hpp"
 
@@ -12,10 +12,10 @@ namespace dual_arm_alm_gd_planner
 {
 
 // =====================================================================
-// 包覆球常數 (= MATLAB robot_arm_bubble 內的 arm_r/arm_p/arm_frame、ped_*)
+// bounding-sphere constants (= arm_r/arm_p/arm_frame, ped_* inside MATLAB robot_arm_bubble)
 // =====================================================================
 
-// [MATLAB] RA610 底盤 4 球 (R=320, 中心固定在 T_base 座標系)
+// [MATLAB] RA610 base 4 spheres (R=320, centers fixed in the T_base coordinate frame)
 const std::vector<BubbleDef> GdSolver::PEDESTAL_A = {
   { -1, 320.0,  220.0,  -65.0, 55.0 },
   { -1, 320.0,  220.0,  296.0, 55.0 },
@@ -23,7 +23,7 @@ const std::vector<BubbleDef> GdSolver::PEDESTAL_A = {
   { -1, 320.0, -220.0,  -64.0, 55.0 },
 };
 
-// [MATLAB] RA610 手臂 12 球 {link_id (arm_frame, 0-indexed), R, [x,y,z]}
+// [MATLAB] RA610 arm 12 spheres {link_id (arm_frame, 0-indexed), R, [x,y,z]}
 const std::vector<BubbleDef> GdSolver::BUBBLES_A = {
   { 0, 280.0,    0.0,   0.0, 145.0 },
   { 1, 300.0,  -15.0,   0.0, -70.0 },
@@ -39,7 +39,7 @@ const std::vector<BubbleDef> GdSolver::BUBBLES_A = {
   { 6, 100.0,    0.0,   0.0,   0.0 },
 };
 
-// [MATLAB] RA605 底盤 8 球 (R=350)
+// [MATLAB] RA605 base 8 spheres (R=350)
 const std::vector<BubbleDef> GdSolver::PEDESTAL_B = {
   { -1, 350.0,  170.0,  290.0, 661.0 },
   { -1, 350.0, -170.0,  290.0, 661.0 },
@@ -51,7 +51,7 @@ const std::vector<BubbleDef> GdSolver::PEDESTAL_B = {
   { -1, 350.0,  185.0, -250.0, 231.0 },
 };
 
-// [MATLAB] RA605 手臂 10 球
+// [MATLAB] RA605 arm 10 spheres
 const std::vector<BubbleDef> GdSolver::BUBBLES_B = {
   { 0, 175.0,    0.0,    0.0,   85.0 },
   { 1, 135.0,    0.0,    0.0, -135.0 },
@@ -69,7 +69,7 @@ const std::vector<BubbleDef> GdSolver::BUBBLES_B = {
 // transmatrix -> make_rotation / make_translation
 // =====================================================================
 
-// [MATLAB] transmatrix(mode=1, dir, deg): 旋轉 (角度 deg)
+// [MATLAB] transmatrix(mode=1, dir, deg): rotation (angle deg)
 Eigen::Matrix4d GdSolver::make_rotation(char axis, double angle_deg)
 {
   const double cv = std::cos(angle_deg * M_PI / 180.0);
@@ -85,7 +85,7 @@ Eigen::Matrix4d GdSolver::make_rotation(char axis, double angle_deg)
   return m;
 }
 
-// [MATLAB] transmatrix(mode=2, dir, val): 平移 (mm)
+// [MATLAB] transmatrix(mode=2, dir, val): translation (mm)
 Eigen::Matrix4d GdSolver::make_translation(char axis, double dist_mm)
 {
   Eigen::Matrix4d m = Eigen::Matrix4d::Identity();
@@ -96,9 +96,9 @@ Eigen::Matrix4d GdSolver::make_translation(char axis, double dist_mm)
 }
 
 // =====================================================================
-// calc_df: 球對危險因子
+// calc_df: sphere-pair danger factor
 // =====================================================================
-// [MATLAB] sj_ij = exp( ln(0.5)/(R_i+R_j)^2 * d_ij^2 ); 手動雙層迴圈取代 pdist2
+// [MATLAB] sj_ij = exp( ln(0.5)/(R_i+R_j)^2 * d_ij^2 ); manual double loop replacing pdist2
 Eigen::MatrixXd GdSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                   const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2)
 {
@@ -120,17 +120,17 @@ Eigen::MatrixXd GdSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::Vector
 }
 
 // =====================================================================
-// get_collision_masks: 16x18 跨臂 mask
+// get_collision_masks: 16x18 cross-arm mask
 // =====================================================================
-// [MATLAB] sA/sB 球->連桿映射; cAB 連桿級 (行 4~8 vs 全部 = 1); mask = cAB(sA,sB)
+// [MATLAB] sA/sB sphere->link mapping; cAB link-level (rows 4~8 vs all = 1); mask = cAB(sA,sB)
 Eigen::Array<bool, 16, 18> GdSolver::get_collision_masks()
 {
-  // 球 -> 連桿 ID (1-indexed, 同 MATLAB)
+  // sphere -> link ID (1-indexed, same as MATLAB)
   static const int sA[16] = {1,1,1,1, 2, 3, 4,4,4,4, 5, 6,6,6, 7, 8};
   static const int sB[18] = {1,1,1,1,1,1,1,1, 2, 3, 4,4,4, 5, 6,6, 7, 8};
-  // cAB 8x8: 行 1~3 (L0~L2 底盤側) 全 0, 行 4~8 全 1 (1-indexed)
+  // cAB 8x8: rows 1~3 (L0~L2, base side) all 0, rows 4~8 all 1 (1-indexed)
   auto cAB = [](int rowLink, int /*colLink*/) -> bool {
-    return rowLink >= 4;   // [MATLAB] cAB 第 4~8 列為 1, 其餘 0
+    return rowLink >= 4;   // [MATLAB] cAB rows 4~8 are 1, the rest 0
   };
   Eigen::Array<bool, 16, 18> mask;
   for (int i = 0; i < 16; ++i)
@@ -140,9 +140,9 @@ Eigen::Array<bool, 16, 18> GdSolver::get_collision_masks()
 }
 
 // =====================================================================
-// RA610 FK: 16 球 (4 底盤 + 12 手臂) + T_ee
+// RA610 FK: 16 spheres (4 base + 12 arm) + T_ee
 // =====================================================================
-// [MATLAB] 基座已含在 T_base; chain: T1=base*Tz(117), T2=Tz(448.5)*Rz(J1), ...
+// [MATLAB] the base is already included in T_base; chain: T1=base*Tz(117), T2=Tz(448.5)*Rz(J1), ...
 void GdSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                       Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                       Eigen::Matrix4d& T_ee)
@@ -161,7 +161,7 @@ void GdSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const doubl
   bubble.resize(NUM_TOTAL, 3);
   r.resize(NUM_TOTAL);
 
-  // 底盤球: 固定在 T_base 座標系
+  // base spheres: fixed in the T_base coordinate frame
   for (int k = 0; k < NUM_PED; ++k) {
     const BubbleDef& b = PEDESTAL_A[k];
     Eigen::Vector4d pt(b.cx, b.cy, b.cz, 1.0);
@@ -170,13 +170,13 @@ void GdSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const doubl
     r(k) = b.radius;
   }
 
-  // 手臂球: 按連桿累乘 T_cum 轉換
+  // arm spheres: transformed by the accumulated per-link product T_cum
   Eigen::Matrix4d T_cum = Eigen::Matrix4d::Identity();
   int arm_k = 0;
   for (int i = 0; i < 7; ++i) {
     T_cum = T_cum * T[i];
     for (const BubbleDef& b : BUBBLES_A) {
-      if (b.link_id == i) {   // [MATLAB] arm_frame(j) == i-1 (此處 0-indexed 對齊)
+      if (b.link_id == i) {   // [MATLAB] arm_frame(j) == i-1 (0-indexed alignment here)
         Eigen::Vector4d pt(b.cx, b.cy, b.cz, 1.0);
         Eigen::Vector4d w = T_cum * pt;
         const int out_idx = NUM_PED + arm_k;
@@ -186,11 +186,11 @@ void GdSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const doubl
       }
     }
   }
-  T_ee = T_cum;   // 末端執行器 4x4 (7 連桿累乘)
+  T_ee = T_cum;   // end-effector 4x4 (product of 7 links)
 }
 
 // =====================================================================
-// RA605 FK: 18 球 (8 底盤 + 10 手臂) + T_ee
+// RA605 FK: 18 spheres (8 base + 10 arm) + T_ee
 // =====================================================================
 void GdSolver::robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const double J[6],
                                       Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
@@ -237,7 +237,7 @@ void GdSolver::robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const doubl
 }
 
 // =====================================================================
-// 建構函數 (= MATLAB Dual_Arm_Inequality_ALM_GD_v6 建構函數)
+// constructor (= MATLAB Dual_Arm_Inequality_ALM_GD_v6 constructor)
 // =====================================================================
 GdSolver::GdSolver(const Eigen::MatrixXd& X,
                    const Eigen::Matrix4d& robotA_base,
@@ -255,34 +255,34 @@ GdSolver::GdSolver(const Eigen::MatrixXd& X,
 {
   using std::vector;
 
-  // [MATLAB] M = size(X,1) - 2 (扣頭尾)
+  // [MATLAB] M = size(X,1) - 2 (excluding head and tail)
   M_ = static_cast<int>(X.rows()) - 2;
 
-  // [MATLAB] mask -> 線性索引 (column-major, 與 MATLAB reshape 一致)
+  // [MATLAB] mask -> linear indices (column-major, consistent with MATLAB reshape)
   Eigen::Array<bool, 16, 18> mask = get_collision_masks();
   lin_idx_AB_.clear();
-  for (int col = 0; col < 18; ++col)        // column-major: 先掃列再換行
+  for (int col = 0; col < 18; ++col)        // column-major: scan rows first, then advance columns
     for (int row = 0; row < 16; ++row)
       if (mask(row, col))
-        lin_idx_AB_.push_back(col * 16 + row);   // 0-indexed 線性位置
+        lin_idx_AB_.push_back(col * 16 + row);   // 0-indexed linear position
   K_AB_  = static_cast<int>(lin_idx_AB_.size());
   num_D_ = K_AB_;
 
   num_X_ = 2 * M_ * 6;
   num_C_ = M_ * num_D_;
 
-  // [MATLAB] 頭尾點 X_H/X_T = [A; B]
+  // [MATLAB] head/tail points X_H/X_T = [A; B]
   X_H_.row(0) = X.row(0).segment(0, 6);
   X_H_.row(1) = X.row(0).segment(6, 6);
   X_T_.row(0) = X.row(X.rows()-1).segment(0, 6);
   X_T_.row(1) = X.row(X.rows()-1).segment(6, 6);
 
-  // [MATLAB] 中間點原始關節角 oriPos = [Xa_ori, Xb_ori] (M x 12)
+  // [MATLAB] interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
   oriPos_.resize(M_, 12);
   for (int m = 0; m < M_; ++m)
-    oriPos_.row(m) = X.row(m+1);   // 第 2..end-1 列
+    oriPos_.row(m) = X.row(m+1);   // rows 2..end-1
 
-  // [MATLAB] 初始決策向量 X_vec: 每點 [A1..6, B1..6]
+  // [MATLAB] initial decision vector X_vec: each point [A1..6, B1..6]
   Xm_initial_.resize(num_X_);
   for (int m = 0; m < M_; ++m) {
     const int b = base_x(m);
@@ -292,7 +292,7 @@ GdSolver::GdSolver(const Eigen::MatrixXd& X,
     }
   }
 
-  // [MATLAB] ALM 初值
+  // [MATLAB] ALM initial values
   mu_ = Eigen::VectorXd::Constant(num_C_, 10.0);   // mu_0 = 10
   c_  = 5.0;
 
@@ -300,9 +300,9 @@ GdSolver::GdSolver(const Eigen::MatrixXd& X,
 }
 
 // =====================================================================
-// compute_Dm: 第 m 點 (0-indexed) 的危險因子向量 (num_D)
+// compute_Dm: the danger-factor vector at point m (0-indexed) (num_D)
 // =====================================================================
-// [MATLAB] FK -> calc_df -> 用 lin_idx_AB 過濾出 mask 內的球對
+// [MATLAB] FK -> calc_df -> use lin_idx_AB to filter the sphere pairs within the mask
 Eigen::VectorXd GdSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 {
   const int b = base_x(m);
@@ -315,7 +315,7 @@ Eigen::VectorXd GdSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 
   Eigen::MatrixXd sj = calc_df(rA, rB, bA, bB);   // 16x18
 
-  // [MATLAB] sj_flat = reshape(sj,288,1) (column-major), 取 lin_idx_AB
+  // [MATLAB] sj_flat = reshape(sj,288,1) (column-major), take lin_idx_AB
   Eigen::VectorXd D_m(K_AB_);
   for (int k = 0; k < K_AB_; ++k) {
     const int idx = lin_idx_AB_[k];
@@ -326,7 +326,7 @@ Eigen::VectorXd GdSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
   return D_m;
 }
 
-// [MATLAB] compute_Dx_all: 全 M 點串接 (num_C)
+// [MATLAB] compute_Dx_all: concatenation over all M points (num_C)
 Eigen::VectorXd GdSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 {
   Eigen::VectorXd Dx(num_C_);
@@ -336,9 +336,9 @@ Eigen::VectorXd GdSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 }
 
 // =====================================================================
-// compute_D_cache: D_base + D_plus (前向差分用, GD 不需 D_minus)
+// compute_D_cache: D_base + D_plus (for forward differences; GD does not need D_minus)
 // =====================================================================
-// [MATLAB] D_base:(num_D x M), D_plus:(num_D x 12 x M) 用 vector<MatrixXd>
+// [MATLAB] D_base:(num_D x M), D_plus:(num_D x 12 x M) using vector<MatrixXd>
 void GdSolver::compute_D_cache(const Eigen::VectorXd& X,
                                Eigen::MatrixXd& D_base,
                                std::vector<Eigen::MatrixXd>& D_plus) const
@@ -359,7 +359,7 @@ void GdSolver::compute_D_cache(const Eigen::VectorXd& X,
 }
 
 // =====================================================================
-// compute_G_smooth: 平滑項梯度 (前向差分)
+// compute_G_smooth: smoothing-term gradient (forward difference)
 // =====================================================================
 Eigen::VectorXd GdSolver::compute_G_smooth(const Eigen::VectorXd& X) const
 {
@@ -375,7 +375,7 @@ Eigen::VectorXd GdSolver::compute_G_smooth(const Eigen::VectorXd& X) const
 }
 
 // =====================================================================
-// compute_G_c: 完整梯度 grad_X L_rho = grad f + sum t_i * grad g_i
+// compute_G_c: full gradient grad_X L_rho = grad f + sum t_i * grad g_i
 // =====================================================================
 // [MATLAB] t_i = max(0, mu_i + c*g_i); grad g_i = (D_plus - D_base)/h (block-diagonal)
 Eigen::VectorXd GdSolver::compute_G_c(const Eigen::VectorXd& X,
@@ -384,7 +384,7 @@ Eigen::VectorXd GdSolver::compute_G_c(const Eigen::VectorXd& X,
                                       const Eigen::VectorXd& mu_loc, double c_loc) const
 {
   const double h = delta_;
-  Eigen::VectorXd G = compute_G_smooth(X);   // 起手為平滑梯度
+  Eigen::VectorXd G = compute_G_smooth(X);   // start from the smoothing gradient
 
   for (int m = 0; m < M_; ++m) {
     const int bx = base_x(m);
@@ -402,7 +402,7 @@ Eigen::VectorXd GdSolver::compute_G_c(const Eigen::VectorXd& X,
 }
 
 // =====================================================================
-// cost_Xm: 單臂平滑成本 (距原始 + 頭尾 + 鄰點)
+// cost_Xm: single-arm smoothing cost (distance from original + head/tail + neighbor)
 // =====================================================================
 double GdSolver::cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& Xori,
                          const Eigen::RowVectorXd& XH, const Eigen::RowVectorXd& XT) const
@@ -461,9 +461,9 @@ double GdSolver::cost_L_loc(const Eigen::VectorXd& X,
 }
 
 // =====================================================================
-// line_search_newton_1d: 1D Newton 線搜索 phi(a)=L_rho(X+a*d)
+// line_search_newton_1d: 1D Newton line search phi(a)=L_rho(X+a*d)
 // =====================================================================
-// [MATLAB] a <- a - phi'/phi''; phi',phi'' 3 點中心差分; 失敗退 fallback
+// [MATLAB] a <- a - phi'/phi''; phi',phi'' via 3-point central differences; falls back to fallback on failure
 double GdSolver::line_search_newton_1d(const Eigen::VectorXd& X, const Eigen::VectorXd& d,
                                        const Eigen::VectorXd& mu_loc, double c_loc) const
 {
@@ -494,7 +494,7 @@ double GdSolver::line_search_newton_1d(const Eigen::VectorXd& X, const Eigen::Ve
 }
 
 // =====================================================================
-// run_alm: ALM 外層 + GD 內層 + 線搜索 (= MATLAB run_alm)
+// run_alm: ALM outer + GD inner + line search (= MATLAB run_alm)
 // =====================================================================
 SolverLog GdSolver::run_alm()
 {
@@ -515,33 +515,33 @@ SolverLog GdSolver::run_alm()
     const int K_inner_now = (k_outer == 1) ? K_inner_first_ : K_inner_;
     int inner_done = 0;
 
-    // ===== [Step 1] 內層 min_X L_rho =====
+    // ===== [Step 1] inner min_X L_rho =====
     for (int inner = 1; inner <= K_inner_now; ++inner) {
-      // (1a) FK 擾動快取
+      // (1a) FK perturbation cache
       Eigen::MatrixXd D_base; vector<Eigen::MatrixXd> D_plus;
       compute_D_cache(X, D_base, D_plus);
 
-      // (1b) 梯度
+      // (1b) gradient
       Eigen::VectorXd G = compute_G_c(X, D_base, D_plus, mu_loc, c_loc);
       const double G_norm2 = G.squaredNorm();
       G_norm = std::sqrt(G_norm2);
 
-      // (1c) 發散偵測 (梯度)
+      // (1c) divergence detection (gradient)
       if (!G.allFinite() || G_norm > 1e10) {
-        std::cout << "  * 內層發散! outer=" << k_outer << " inner=" << inner
+        std::cout << "  * inner divergence! outer=" << k_outer << " inner=" << inner
                   << " ||G||=" << G_norm << "\n";
         log.diverge_iter = k_outer;
         break;
       }
 
-      // (1d) GD 方向: 最陡下降 d = -G  (= MATLAB GD_v6)
-      //   [vs CG] GD 無方向記憶; CG 版的 FR 動量簿記 (pre_G_norm2/pre_d) 已移除
+      // (1d) GD direction: steepest descent d = -G  (= MATLAB GD_v6)
+      //   [vs CG] GD has no direction memory; the CG version's FR momentum bookkeeping (pre_G_norm2/pre_d) has been removed
       Eigen::VectorXd d = -G;
 
-      // (1e) 1D Newton 線搜索
+      // (1e) 1D Newton line search
       const double a = line_search_newton_1d(X, d, mu_loc, c_loc);
 
-      // (1f) 更新 X
+      // (1f) update X
       X = X + a * d;
 
       d_norm = d.norm();
@@ -550,7 +550,7 @@ SolverLog GdSolver::run_alm()
       log.G_norm_history.push_back(G_norm);
       log.d_norm_history.push_back(d_norm);
 
-      // (1h) 內層收斂
+      // (1h) inner convergence
       if (G_norm < eps_in) { inner_done = inner; break; }
 
     }  // inner
@@ -559,7 +559,7 @@ SolverLog GdSolver::run_alm()
     if (log.diverge_iter > 0) break;
     if (inner_done == 0) inner_done = K_inner_now;
 
-    // ===== 外層: 計算 D / 成本 / KKT 度量 (用更新前 mu_loc) =====
+    // ===== outer: compute D / cost / KKT metrics (using the pre-update mu_loc) =====
     Eigen::VectorXd Dx_all = compute_Dx_all(X);
     Eigen::VectorXd g_all  = Dx_all.array() - danger_threshold_;
     const double max_D = Dx_all.maxCoeff();
@@ -582,14 +582,14 @@ SolverLog GdSolver::run_alm()
       if (std::abs(vk_i) > v_curr) v_curr = std::abs(vk_i);
     }
 
-    // ===== [Step 3] 乘子更新 mu = max(0, mu + c*g)（古典 PHR，Bertsekas 1982, eq.17）=====
+    // ===== [Step 3] multiplier update mu = max(0, mu + c*g) (classical PHR, Bertsekas 1982, eq.17) =====
     for (int ii = 0; ii < num_C_; ++ii) {
       double val = mu_loc(ii) + c_loc * g_all(ii);
       if (val < 0.0) val = 0.0;
       mu_loc(ii) = val;
     }
 
-    // ===== [Step 2] 罰參數更新 c <- beta_c*c 若 v_curr > gamma_v*v_prev =====
+    // ===== [Step 2] penalty-parameter update c <- beta_c*c if v_curr > gamma_v*v_prev =====
     bool c_updated = false;
     // if (v_pure < epsilon_v_) {
     //   c_updated = false;
@@ -601,12 +601,12 @@ SolverLog GdSolver::run_alm()
     }
     v_prev = v_curr;
 
-    // 內層精度遞減
+    // inner-tolerance decay
     eps_in = std::max(epsilon_inner_min_, epsilon_inner_decay_ * eps_in);
 
     ++outer_cnt;
     const double mu_max_cur = mu_loc.maxCoeff();
-    // 填外層歷史
+    // fill the outer history
     log.L_history.push_back(L_curr);
     log.f_history_f.push_back(f_curr);
     log.f_history_fa.push_back(fa_curr);
@@ -629,9 +629,9 @@ SolverLog GdSolver::run_alm()
               << "/" << K_inner_now << " | c" << (c_updated ? "(up)" : "") << ":"
               << c_loc << " | eps_in:" << eps_in << "\n";
 
-    // ===== 停止: 三條 KKT =====
+    // ===== stop: three KKT conditions =====
     if (v_pure < epsilon_v_ && G_norm < epsilon_g_ && compl_v < epsilon_compl_) {
-      std::cout << "\n  * ALM 收斂! (3-KKT) outer=" << k_outer << "\n";
+      std::cout << "\n  * ALM converged! (3-KKT) outer=" << k_outer << "\n";
       log.outer_break_iter = k_outer;
       break;
     }
@@ -649,16 +649,16 @@ SolverLog GdSolver::run_alm()
   log.final_G_norm = G_norm;
   log.final_D      = compute_Dx_all(X_final_);
 
-  std::cout << "\n========== ALM 結果摘要 ==========\n"
-            << "  外層迭代: " << outer_cnt << " | 內層總迭代: " << inner_cnt << "\n";
+  std::cout << "\n========== ALM result summary ==========\n"
+            << "  outer iterations: " << outer_cnt << " | total inner iterations: " << inner_cnt << "\n";
   if (log.outer_break_iter > 0)
-    std::cout << "  狀態: 收斂於 iter " << log.outer_break_iter << " (3-KKT)\n";
+    std::cout << "  status: converged at iter " << log.outer_break_iter << " (3-KKT)\n";
   else if (log.diverge_iter > 0)
-    std::cout << "  狀態: 發散 (outer=" << log.diverge_iter << ")\n";
+    std::cout << "  status: diverged (outer=" << log.diverge_iter << ")\n";
   else if (log.feasibility_mode)
-    std::cout << "  狀態: c 達上限 fallback\n";
+    std::cout << "  status: c reached the upper bound (fallback)\n";
   else
-    std::cout << "  狀態: 達迭代上限未收斂\n";
+    std::cout << "  status: reached the iteration limit without converging\n";
   std::cout << "===================================\n\n";
 
   return log;

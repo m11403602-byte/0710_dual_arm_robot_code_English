@@ -1,4 +1,4 @@
-# dual_arm_domain_bridge (Plan B 兩支橋: 上行合併 + 下行端點透明轉送)
+# dual_arm_domain_bridge (Plan B two bridges: uplink merging + downlink endpoint transparent relay)
 cmake_minimum_required(VERSION 3.8)
 project(dual_arm_domain_bridge)
 
@@ -15,12 +15,12 @@ find_package(sensor_msgs REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(control_msgs REQUIRED)
 
-# 程式 1: 上行橋 (常駐)
+# Program 1: uplink bridge (resident)
 add_executable(joint_state_uplink_bridge src/joint_state_uplink_bridge.cpp)
 target_include_directories(joint_state_uplink_bridge PUBLIC include)
 ament_target_dependencies(joint_state_uplink_bridge rclcpp sensor_msgs)
 
-# 程式 2: 下行端點透明轉送
+# Program 2: downlink endpoint transparent relay
 add_executable(trajectory_downlink_endpoint_relay src/trajectory_downlink_endpoint_relay.cpp)
 target_include_directories(trajectory_downlink_endpoint_relay PUBLIC include)
 ament_target_dependencies(trajectory_downlink_endpoint_relay

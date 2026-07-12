@@ -6,7 +6,7 @@
         <link name="${tf_prefix}platform_top_link">
             <visual>
                 <geometry>
-                    <!-- 替換成你的 mesh：-->
+                    <!-- replace with your own mesh: -->
                     <mesh filename="package://hiwin_dual_arm_description/meshes/platform/visual/ra610_platform.STL"/>
                 </geometry>
                 <origin xyz="0 0 0" rpy="0 0 0"/>

@@ -1,15 +1,15 @@
-// 上行橋（Plan B 程式 1/2，常駐、無狀態）
-// 職責 = 現有 joint_state_merger 搬到跨 domain 版 + 原廠關節名→前綴名翻譯
+// uplink bridge (Plan B program 1/2, resident, stateless)
+// responsibility = the existing joint_state_merger moved to a cross-domain version + stock joint name → prefixed name translation
 //
-//   ctx_armA (D20): 訂 /joint_states ── joint_N → big_joint_N ──┐
-//   ctx_armB (D30): 訂 /joint_states ── joint_N → small_joint_N ┤→ 合併 12 軸
-//   ctx_host (D10): ────────────────────────────────────────────┘→ 發 /joint_states
+//   ctx_armA (D20): subscribe to /joint_states ── joint_N → big_joint_N ──┐
+//   ctx_armB (D30): subscribe to /joint_states ── joint_N → small_joint_N ┤→ merge 12 axes
+//   ctx_host (D10): ────────────────────────────────────────────┘→ publish /joint_states
 //
-// 消費者: move_group CurrentStateMonitor (規劃起點)、主機 rsp→TF→RViz 顯示
-// 沒有它主機就「瞎」: 規劃報 Failed to fetch current robot state、RViz 模型僵住
+// consumers: move_group CurrentStateMonitor (planning start state), the host rsp→TF→RViz display
+// without it the host is "blind": planning reports Failed to fetch current robot state, and the RViz model freezes
 //
-// 用法: ros2 run dual_arm_domain_bridge joint_state_uplink_bridge [host_d armA_d armB_d]
-//       預設 domain: host=10, armA=11, armB=12
+// usage: ros2 run dual_arm_domain_bridge joint_state_uplink_bridge [host_d armA_d armB_d]
+//       default domains: host=10, armA=11, armB=12
 
 #include "dual_arm_domain_bridge/multi_context.hpp"
 
@@ -27,20 +27,20 @@ using sensor_msgs::msg::JointState;
 namespace
 {
 
-// ---- 設定（前綴對齊主機雙臂模型）----
+// ---- configuration (prefixes aligned with the host's dual-arm model) ----
 const char * kPrefixA = "big_";     // joint_1 → big_joint_1
 const char * kPrefixB = "small_";   // joint_1 → small_joint_1
 
 struct SharedState
 {
   std::mutex mtx;
-  JointState arm_a;        // 已改名（加前綴）後的最新狀態
+  JointState arm_a;        // the latest state after renaming (prefix added)
   JointState arm_b;
   bool has_a{false};
   bool has_b{false};
 };
 
-// 改名加前綴（上行的名字翻譯: 原廠 joint_N → 前綴名）
+// rename with a prefix (uplink name translation: stock joint_N → prefixed name)
 JointState add_prefix(const JointState & in, const std::string & prefix)
 {
   JointState out = in;
@@ -50,7 +50,7 @@ JointState add_prefix(const JointState & in, const std::string & prefix)
   return out;
 }
 
-// 兩臂快取 → 一筆 12 軸合併訊息（position 必併; velocity 兩臂都完整才併）
+// two-arm cache → one merged 12-axis message (position always merged; velocity merged only when both arms are complete)
 bool build_merged(SharedState & s, JointState & merged)
 {
   std::lock_guard<std::mutex> lk(s.mtx);
@@ -88,7 +88,7 @@ int main(int argc, char ** argv)
 
   rclcpp::install_signal_handlers();
 
-  // 三個 context（host 先建, 負責初始化 logging）
+  // three contexts (host built first, responsible for initializing logging)
   DomainNode host = make_domain_node("joint_state_uplink_bridge", host_d, true);
   DomainNode armA = make_domain_node("uplink_arm_a", arm_a_d, false);
   DomainNode armB = make_domain_node("uplink_arm_b", arm_b_d, false);
@@ -97,7 +97,7 @@ int main(int argc, char ** argv)
   auto pub = host.node->create_publisher<JointState>("/joint_states", 10);
   auto host_clock = host.node->get_clock();
 
-  // 任一臂更新 → 立刻合併發布（事件驅動, 最低延遲）
+  // any arm update → merge and publish immediately (event-driven, minimum latency)
   auto publish_merged = [state, pub, host_clock]() {
       JointState merged;
       if (!build_merged(*state, merged)) {return;}
@@ -128,10 +128,10 @@ int main(int argc, char ** argv)
     });
 
   RCLCPP_INFO(host.node->get_logger(),
-    "上行橋啟動: D%zu(A臂,加前綴 %s) + D%zu(B臂,加前綴 %s) → D%zu /joint_states (12軸)",
+    "uplink bridge started: D%zu (Arm A, prefix %s) + D%zu (Arm B, prefix %s) → D%zu /joint_states (12 axes)",
     arm_a_d, kPrefixA, arm_b_d, kPrefixB, host_d);
   RCLCPP_INFO(host.node->get_logger(),
-    "等待兩臂 /joint_states ... (任一臂未上線前不發布)");
+    "waiting for both arms' /joint_states ... (not published until both arms are online)");
 
   host.start();
   armA.start();

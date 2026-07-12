@@ -1,7 +1,7 @@
-// 多 domain context 共用樣板（上行橋與下行 client 共用）
-// 核心技術: rclcpp 一個程序開多個 Context, 各掛不同 ROS_DOMAIN
-//   (InitOptions::set_domain_id, Humble 支援)
-// 規則: 節點不可跨 context 掛同一 executor → 一 context 一 executor 一執行緒
+// shared template for multi-domain contexts (shared by the uplink bridge and the downlink client)
+// core technique: rclcpp opens multiple Contexts in one process, each attached to a different ROS_DOMAIN
+//   (InitOptions::set_domain_id, supported on Humble)
+// rule: a node cannot attach to the same executor across contexts → one context, one executor, one thread
 #ifndef DUAL_ARM_DOMAIN_BRIDGE__MULTI_CONTEXT_HPP_
 #define DUAL_ARM_DOMAIN_BRIDGE__MULTI_CONTEXT_HPP_
 
@@ -14,7 +14,7 @@
 namespace dual_arm_domain_bridge
 {
 
-// 一個 domain 的「context + node + executor + spin 執行緒」四件組
+// the "context + node + executor + spin thread" quadruple for a single domain
 struct DomainNode
 {
   std::shared_ptr<rclcpp::Context> context;
@@ -33,8 +33,8 @@ struct DomainNode
   }
 };
 
-// 建立掛在指定 DOMAIN 上的節點
-// first_context = true 時負責初始化 logging（整個程序只能初始化一次）
+// create a node attached to the specified DOMAIN
+// when first_context = true, it is responsible for initializing logging (which the whole process can do only once)
 inline DomainNode make_domain_node(
   const std::string & node_name, size_t domain_id, bool first_context)
 {
@@ -42,8 +42,8 @@ inline DomainNode make_domain_node(
 
   rclcpp::InitOptions init_opts;
   init_opts.auto_initialize_logging(first_context);
-  init_opts.set_domain_id(domain_id);     // [關鍵] 此 context 的 DDS domain
-  init_opts.shutdown_on_signal = true;    // Ctrl+C → 關閉 context → executor 返回
+  init_opts.set_domain_id(domain_id);     // [key] the DDS domain of this context
+  init_opts.shutdown_on_signal = true;    // Ctrl+C → close the context → the executor returns
 
   d.context = std::make_shared<rclcpp::Context>();
   d.context->init(0, nullptr, init_opts);

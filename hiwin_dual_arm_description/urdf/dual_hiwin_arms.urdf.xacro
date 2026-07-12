@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://wiki.ros.org/xacro" name="dual_hiwin">
 
-    <!-- HIWIN 原廠手臂 macro -->
+    <!-- HIWIN stock arm macro -->
     <xacro:include filename="$(find hiwin_dual_arm_description)/urdf/ra_macro.xacro" />
 
-    <!-- 你的平台 macro -->
+    <!-- your platform macro -->
     <xacro:include filename="$(find hiwin_dual_arm_description)/urdf/big_arm_platform.urdf.xacro" />
     <xacro:include filename="$(find hiwin_dual_arm_description)/urdf/small_arm_platform.urdf.xacro" />
 
     <!-- World -->
     <link name="world"/>
 
-    <!-- ========== 大手臂：平台 + 手臂 ========== -->
+    <!-- ========== Big arm: platform + arm ========== -->
     <xacro:big_arm_platform
         tf_prefix="big_"
         parent="world">
@@ -28,7 +28,7 @@
         <origin xyz="0 0 0.117" rpy="0 0 0"/>
     </xacro:hiwin_arm>
 
-    <!-- ========== 小手臂：平台 + 手臂 ========== -->
+    <!-- ========== Small arm: platform + arm ========== -->
     <xacro:small_arm_platform
         tf_prefix="small_"
         parent="world">

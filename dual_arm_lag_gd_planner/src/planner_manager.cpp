@@ -1,8 +1,8 @@
 // =====================================================================
-// planner_manager.cpp — MoveIt2 插件實作
+// planner_manager.cpp — MoveIt2 plugin implementation
 // =====================================================================
 #include "dual_arm_lag_gd_planner/planner_manager.hpp"
-#include <exception>   // [REVISE] 匯出 try/catch
+#include <exception>   // [REVISE] export try/catch
 
 #include <pluginlib/class_list_macros.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.h>
@@ -13,21 +13,21 @@ namespace dual_arm_lag_gd_planner
 {
 
 // =====================================================================
-// PlanningContext::solve — 主規劃流程
+// PlanningContext::solve — the main planning flow
 // =====================================================================
 bool DualArmPlanningContext::solve(planning_interface::MotionPlanResponse& res)
 {
-  // 1. 計時
+  // 1. timing
   auto start_time = std::chrono::steady_clock::now();
 
-  // 2. 檢查 goal constraints 有效性
+  // 2. check the validity of the goal constraints
   if (request_.goal_constraints.empty() ||
       request_.goal_constraints[0].joint_constraints.empty()) {
     res.error_code_.val = moveit_msgs::msg::MoveItErrorCodes::INVALID_GOAL_CONSTRAINTS;
     return false;
   }
 
-  // 3. 從 MoveIt 提取起點/終點
+  // 3. extract start/goal from MoveIt
   moveit::core::RobotState start_state = planning_scene_->getCurrentState();
   moveit::core::robotStateMsgToRobotState(request_.start_state, start_state);
   moveit::core::RobotState goal_state(start_state);
@@ -35,8 +35,8 @@ bool DualArmPlanningContext::solve(planning_interface::MotionPlanResponse& res)
     goal_state.setJointPositions(jc.joint_name, &jc.position);
   goal_state.update();
 
-  // 4. 轉成 Eigen 矩陣 (⚠ MoveIt 用 radian, 演算法用 degree)
-  //    關節名前綴由 yaml 參數 joint_prefix_A/B 決定 (依 SRDF)
+  // 4. convert to Eigen matrices (⚠ MoveIt uses radians, the algorithm uses degrees)
+  //    the joint-name prefixes are determined by the yaml parameters joint_prefix_A/B (per SRDF)
   Eigen::MatrixXd A_wp(2, 6), B_wp(2, 6);
   for (int j = 0; j < 6; ++j) {
     const std::string jA = joint_prefix_A_ + std::to_string(j + 1);
@@ -47,35 +47,35 @@ bool DualArmPlanningContext::solve(planning_interface::MotionPlanResponse& res)
     B_wp(1, j) = goal_state.getJointPositions(jB)[0]  * 180.0 / M_PI;
   }
 
-  // 5. 呼叫避障系統 (核心庫) — 傳入全部 yaml 可調參數
+  // 5. call the avoidance system (core library) — passing in all yaml-tunable parameters
   AvoidanceSystem optimizer(A_wp, B_wp, path_weight_, danger_threshold_,
                             collision_tolerance_, fix_tolerance_, max_refinement_iter_,
                             smooth_w_, smooth_w_H_, smooth_w_T_, smooth_w_neighbor_);
   optimizer.set_lag_params(lag_wd_, lag_lam0_, lag_s0_,
-                           lag_tol_phys_, lag_tol_stable_, lag_max_iter_);   // [NEW] yaml → 純 Lagrangian 注入
+                           lag_tol_phys_, lag_tol_stable_, lag_max_iter_);   // [NEW] yaml → pure Lagrangian injection
   optimizer.run_optimization();
 
-  // [NEW] CSV 匯出工具 (export_csv_prefix 非空才動作)
-  //   ⚠ 刻意安排在「純路徑規劃時間」計時區之外呼叫 — 磁碟 I/O 不污染對比數據
+  // [NEW] CSV export tool (acts only when export_csv_prefix is non-empty)
+  //   ⚠ deliberately invoked outside the "pure path-planning time" timing region — disk I/O must not pollute the comparison data
   auto export_csv_if_enabled = [&]() {
     if (export_csv_prefix_.empty()) { return; }
-    // [REVISE] 整合匯出包 try/catch: 匯出是診斷副作用, 失敗(如權限/磁碟)只警告, 絕不擊落規劃
+    // [REVISE] wrap the consolidated export in try/catch: export is a diagnostic side effect; on failure (e.g., permissions/disk) it only warns and never brings down planning
     try {
       optimizer.export_unified(export_csv_prefix_, export_level_);
     } catch (const std::exception& e) {
       RCLCPP_WARN(node_->get_logger(),
-                  "[CSV] 匯出失敗, 規劃不受影響 (檢查 export_csv_prefix 是否可寫): %s", e.what());
+                  "[CSV] export failed, planning unaffected (check whether export_csv_prefix is writable): %s", e.what());
     }
   };
 
   if (optimizer.has_collision()) {
-    export_csv_if_enabled();   // [NEW] 失敗也匯出 (除錯素材; 失敗路徑無計時語意)
+    export_csv_if_enabled();   // [NEW] export even on failure (debugging material; the failure path has no timing semantics)
     res.error_code_.val = moveit_msgs::msg::MoveItErrorCodes::PLANNING_FAILED;
     return false;
   }
 
-  // 6. 結果轉回 RobotTrajectory (⚠ degree -> radian)
-  //    先暫填等間隔時間 (稍後依 time_optimal 重新參數化)
+  // 6. convert the result back to a RobotTrajectory (⚠ degrees -> radians)
+  //    first fill in equal-interval times (later re-parameterized per time_optimal)
   auto trajectory = std::make_shared<robot_trajectory::RobotTrajectory>(
       start_state.getRobotModel(), getGroupName());
   const Trajectory& opt = optimizer.get_optimized_trajectory();
@@ -90,21 +90,21 @@ bool DualArmPlanningContext::solve(planning_interface::MotionPlanResponse& res)
       wp.setJointPositions(jB, &rad_B);
     }
     wp.update();
-    trajectory->addSuffixWayPoint(wp, 0.1);   // 暫填, 下面會重設
+    trajectory->addSuffixWayPoint(wp, 0.1);   // temporary fill, reset below
   }
 
-  // 7. 記錄純路徑規劃時間 (只含避障 run_optimization + 軌跡轉換, 不含時間參數化)
+  // 7. record the pure path-planning time (only avoidance run_optimization + trajectory conversion, excluding time parameterization)
   auto plan_end = std::chrono::steady_clock::now();
   const double pure_plan_time = std::chrono::duration<double>(plan_end - start_time).count();
-  std::cout << "\n[純路徑規劃時間] " << pure_plan_time << " 秒 (僅避障)\n";
+  std::cout << "\n[pure path-planning time] " << pure_plan_time << " s (avoidance only)\n";
 
-  export_csv_if_enabled();   // [NEW] 計時結束後才寫盤 — 規劃時間數據保持乾淨
+  export_csv_if_enabled();   // [NEW] write to disk only after timing ends — keep the planning-time data clean
 
-  // 8. 時間參數化 (在插件內處理; yaml 已移除 TOTG adapter, 避免重複)
+  // 8. time parameterization (handled inside the plugin; the TOTG adapter has been removed from the yaml to avoid duplication)
   const int n_wp = static_cast<int>(trajectory->getWayPointCount());
   if (time_optimal_) {
-    // ===== TOTG: 時間最佳化參數化 (依速度/加速度限制算時間戳) =====
-    //   讀 RViz / MotionPlanRequest 的 scaling (滑桿), 預設/異常時用 1.0
+    // ===== TOTG: time-optimal parameterization (compute timestamps per velocity/acceleration limits) =====
+    //   read the scaling (slider) from the RViz / MotionPlanRequest, default to 1.0 by default/on error
     double vel_scale = request_.max_velocity_scaling_factor;
     double acc_scale = request_.max_acceleration_scaling_factor;
     if (vel_scale <= 0.0 || vel_scale > 1.0) vel_scale = 1.0;
@@ -113,41 +113,41 @@ bool DualArmPlanningContext::solve(planning_interface::MotionPlanResponse& res)
     trajectory_processing::TimeOptimalTrajectoryGeneration totg;
     bool ok = totg.computeTimeStamps(*trajectory, vel_scale, acc_scale);
     if (!ok) {
-      std::cout << "  [WARN] TOTG 時間參數化失敗, 改用等間隔\n";
+      std::cout << "  [WARN] TOTG time parameterization failed, falling back to equal intervals\n";
       for (int i = 1; i < n_wp; ++i)
         trajectory->setWayPointDurationFromPrevious(i, min_time_interval_);
     } else {
-      std::cout << "  [時間參數化] TOTG (time_optimal=true, vel_scale="
+      std::cout << "  [time parameterization] TOTG (time_optimal=true, vel_scale="
                 << vel_scale << ", acc_scale=" << acc_scale << ")\n";
     }
   } else {
-    // ===== 自訂等間隔: dt = path_total_time/(n-1), 但不小於 min_time_interval =====
+    // ===== custom equal-interval: dt = path_total_time/(n-1), but not smaller than min_time_interval =====
     double dt = (n_wp > 1) ? (path_total_time_ / (n_wp - 1)) : min_time_interval_;
-    if (dt < min_time_interval_) dt = min_time_interval_;   // 受最小間隔保護
+    if (dt < min_time_interval_) dt = min_time_interval_;   // protected by the minimum interval
     for (int i = 1; i < n_wp; ++i)
       trajectory->setWayPointDurationFromPrevious(i, dt);
-    std::cout << "  [時間參數化] 等間隔 dt=" << dt << " 秒 (time_optimal=false, "
-              << "目標總時間=" << path_total_time_ << ", 最小間隔=" << min_time_interval_ << ")\n";
+    std::cout << "  [time parameterization] equal interval dt=" << dt << " s (time_optimal=false, "
+              << "target total time=" << path_total_time_ << ", minimum interval=" << min_time_interval_ << ")\n";
   }
 
-  // 9. 顯示軌跡時長 (時間參數化後的真實執行總時長, getDuration)
+  // 9. report the trajectory duration (the real execution duration after time parameterization, getDuration)
   const double traj_duration = trajectory->getDuration();
-  std::cout << "[軌跡時長] " << traj_duration << " 秒 (" << n_wp << " 點, 機器人執行用)\n";
+  std::cout << "[trajectory duration] " << traj_duration << " s (" << n_wp << " points, for robot execution)\n";
 
-  // 10. 軌跡規劃時長 = 純路徑規劃 + 時間參數化計算耗時 (電腦計算總時間)
+  // 10. trajectory planning duration = pure path planning + time-parameterization compute time (total compute time)
   auto end_time = std::chrono::steady_clock::now();
   const double total_plan_time = std::chrono::duration<double>(end_time - start_time).count();
-  std::cout << "[軌跡規劃時長] " << total_plan_time
-            << " 秒 (純規劃 " << pure_plan_time
-            << " + 時間參數化 " << (total_plan_time - pure_plan_time) << ")\n";
+  std::cout << "[trajectory planning duration] " << total_plan_time
+            << " s (pure planning " << pure_plan_time
+            << " + time parameterization " << (total_plan_time - pure_plan_time) << ")\n";
 
   res.trajectory_ = trajectory;
   res.error_code_.val = moveit_msgs::msg::MoveItErrorCodes::SUCCESS;
-  res.planning_time_ = total_plan_time;   // 回報含時間參數化的總規劃時間
+  res.planning_time_ = total_plan_time;   // report the total planning time including time parameterization
   return true;
 }
 
-// DetailedResponse 委託 (舊版模式)
+// DetailedResponse delegation (legacy mode)
 bool DualArmPlanningContext::solve(planning_interface::MotionPlanDetailedResponse& res)
 {
   planning_interface::MotionPlanResponse normal_res;
@@ -172,7 +172,7 @@ bool DualArmLagGdPlannerManager::initialize(const moveit::core::RobotModelConstP
   node_                = node;
   parameter_namespace_ = parameter_namespace;
 
-  load_parameters();   // 啟動時讀一次 (之後每次 getPlanningContext 會再重讀)
+  load_parameters();   // read once at startup (re-read afterward on every getPlanningContext)
 
   RCLCPP_INFO(node_->get_logger(),
       "DualArmAvoidancePlanner initialized (path_weight=%.2f, danger_threshold=%.2f, "
@@ -182,7 +182,7 @@ bool DualArmLagGdPlannerManager::initialize(const moveit::core::RobotModelConstP
   return true;
 }
 
-// 從參數伺服器重讀所有參數 (yaml/rqt 改了下次規劃即生效)
+// re-read all parameters from the parameter server (yaml/rqt edits take effect on the next planning run)
 void DualArmLagGdPlannerManager::load_parameters() const
 {
   const std::string ns = parameter_namespace_.empty() ? "" : (parameter_namespace_ + ".");
@@ -215,7 +215,7 @@ void DualArmLagGdPlannerManager::getPlanningAlgorithms(std::vector<std::string>&
 void DualArmLagGdPlannerManager::setPlannerConfigurations(
     const planning_interface::PlannerConfigurationMap& /*pcs*/)
 {
-  // 本規劃器無額外 per-config 設定; 參數已在 initialize 讀入
+  // this planner has no additional per-config settings; parameters are already read in initialize
 }
 
 planning_interface::PlanningContextPtr DualArmLagGdPlannerManager::getPlanningContext(
@@ -224,12 +224,12 @@ planning_interface::PlanningContextPtr DualArmLagGdPlannerManager::getPlanningCo
     moveit_msgs::msg::MoveItErrorCodes& error_code) const
 {
   if (!planning_scene) {
-    RCLCPP_ERROR(node_->get_logger(), "planning_scene 為空");
+    RCLCPP_ERROR(node_->get_logger(), "planning_scene is empty");
     error_code.val = moveit_msgs::msg::MoveItErrorCodes::FAILURE;
     return planning_interface::PlanningContextPtr();
   }
 
-  // 每次規劃前重讀參數 (讓 yaml/rqt 動態調整生效, 不用重啟 move_group)
+  // re-read parameters before every planning run (so yaml/rqt adjustments take effect without restarting move_group)
   load_parameters();
 
   auto context = std::make_shared<DualArmPlanningContext>(
@@ -252,7 +252,7 @@ planning_interface::PlanningContextPtr DualArmLagGdPlannerManager::getPlanningCo
   context->min_time_interval_   = min_time_interval_;
   context->export_csv_prefix_   = export_csv_prefix_;   // [NEW]
   context->export_level_        = export_level_;        // [NEW]
-  context->lag_wd_   = lag_wd_;   context->lag_lam0_ = lag_lam0_;     // [NEW] 純 Lagrangian 六參數
+  context->lag_wd_   = lag_wd_;   context->lag_lam0_ = lag_lam0_;     // [NEW] the six pure Lagrangian parameters
   context->lag_s0_   = lag_s0_;
   context->lag_tol_phys_ = lag_tol_phys_; context->lag_tol_stable_ = lag_tol_stable_;
   context->lag_max_iter_ = lag_max_iter_;
@@ -264,7 +264,7 @@ planning_interface::PlanningContextPtr DualArmLagGdPlannerManager::getPlanningCo
 bool DualArmLagGdPlannerManager::canServiceRequest(
     const planning_interface::MotionPlanRequest& req) const
 {
-  // 只服務有 joint goal constraints 的請求
+  // only serve requests that have joint goal constraints
   return !req.goal_constraints.empty() &&
          !req.goal_constraints[0].joint_constraints.empty();
 }
@@ -272,7 +272,7 @@ bool DualArmLagGdPlannerManager::canServiceRequest(
 }  // namespace dual_arm_lag_gd_planner
 
 // =====================================================================
-// pluginlib 註冊 (MoveIt 透過這個找到插件)
+// pluginlib registration (this is how MoveIt finds the plugin)
 // =====================================================================
 PLUGINLIB_EXPORT_CLASS(
     dual_arm_lag_gd_planner::DualArmLagGdPlannerManager,

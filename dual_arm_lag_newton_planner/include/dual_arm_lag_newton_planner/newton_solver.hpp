@@ -1,27 +1,27 @@
 // =====================================================================
-// newton_solver.hpp — 第 1 層: 純 Lagrangian 內層優化器 (全維度 Newton)
+// newton_solver.hpp — Layer 1: pure Lagrangian inner optimizer (full-dimension Newton)
 //   = MATLAB Dual_Arm_Lagrangian_Newton_v2
 // =====================================================================
-//   純 Lagrangian (S²-slack) + 全維度 Newton (1116×1116 KKT Hessian, LDLT) + α=1 純步
-//   ⚠ 與 ALM 譜系「不同的數學物件」:
-//     決策變數 V = [X; λ; S] ∈ ℝ^1116  (λ/S 是決策變數, 非外層更新的乘子)
+//   pure Lagrangian (S²-slack) + full-dimension Newton (1116×1116 KKT Hessian, LDLT) + α=1 pure step
+//   ⚠ a "different mathematical object" from the ALM lineage:
+//     decision variable V = [X; λ; S] ∈ ℝ^1116  (λ/S are decision variables, not outer-updated multipliers)
 //     Lagrangian  L(V) = f(X) + w_d · λᵀ · (D(X) − θ·1 + S²)
-//        (slack 化:  h_i = D_i − θ + s_i² = 0,  Bertsekas §3.3.2)
-//     梯度  G = [G_X; G_λ; G_S]  為完整 KKT 一階殘差:
+//        (slacked:  h_i = D_i − θ + s_i² = 0,  Bertsekas §3.3.2)
+//     gradient  G = [G_X; G_λ; G_S]  is the full first-order KKT residual:
 //        G_X = ∇f + w_d Σ λ_i ∇D_i        (stationarity, num_X)
 //        G_λ = w_d · (D − θ + S²)          (primal feasibility, num_C)
 //        G_S = 2 w_d · S ⊙ λ              (complementarity, num_C)
-//     方向  d = −H⁻¹G  (9-block KKT Hessian; ⚠ 不定鞍點 → LDLT 可能不穩, 單一變更點)
-//     步長  α = 1  (純 Newton 步, 無線搜索)
-//     步長  α 由 1D Newton 線搜索 (LS_DELTA=0.01, 與 ALM 之 0.001 不同)
+//     direction  d = −H⁻¹G  (9-block KKT Hessian; ⚠ indefinite saddle point → LDLT may be unstable, the single point of change)
+//     step length  α = 1  (pure Newton step, no line search)
+//     step length  α from a 1D Newton line search (LS_DELTA=0.01, differing from ALM's 0.001)
 //
-//   收斂 = phys_ok && stable_ok && stat_ok  (⚠ Newton 啟用 stat_ok):
-//     Newton 解完整 KKT 系統 → ‖G‖ 可被驅近 0, 故 stat_ok = (‖G‖ ≤ TOL_STAT) 有意義.
-//     此為與 GD/CG 的關鍵差異 (GD/CG 鞍點 ‖G‖ 不收斂, stat_ok 停用).
+//   convergence = phys_ok && stable_ok && stat_ok  (⚠ Newton enables stat_ok):
+//     Newton solves the full KKT system → ‖G‖ can be driven near 0, so stat_ok = (‖G‖ ≤ TOL_STAT) is meaningful.
+//     this is the key difference from GD/CG (for GD/CG, ‖G‖ does not converge at the saddle point, so stat_ok is disabled).
 //
-//   [MATLAB] 對應 class: Dual_Arm_Lagrangian_Newton_v2
-//   座標/單位: 全 degree (與 MATLAB 一致); 距離 mm
-//   幾何 (FK/球/calc_df/mask) 與 ALM/Newton 譜系位元一致 (同一套機器人模型)
+//   [MATLAB] corresponding class: Dual_Arm_Lagrangian_Newton_v2
+//   coordinates/units: all in degrees (consistent with MATLAB); distances in mm
+//   the geometry (FK/spheres/calc_df/mask) is bit-identical to the ALM/Newton lineage (the same robot model)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_NEWTON_PLANNER_GD_SOLVER_HPP
 #define DUAL_ARM_LAG_NEWTON_PLANNER_GD_SOLVER_HPP
@@ -33,67 +33,67 @@
 namespace dual_arm_lag_newton_planner
 {
 
-// [MATLAB] 包覆球定義: {link_id (0-indexed), 半徑, 局部座標 x/y/z}
+// [MATLAB] bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
 struct BubbleDef {
-  int    link_id;   // 掛在第幾連桿 (arm_frame, 0-indexed); 底盤球用 -1
+  int    link_id;   // which link it is attached to (arm_frame, 0-indexed); base spheres use -1
   double radius;
   double cx, cy, cz;
 };
 
 // =====================================================================
-// SolverLog — run_lag 回傳的完整追蹤
-//   外層 avoidance_system 的 export 函式讀這些欄位
-//   ⚠ 與 ALM 之 SolverLog 不同: 此處無 c/μ 排程, 改帶 KKT 殘差 + λ/S 診斷
+// SolverLog — the full trace returned by run_lag
+//   the outer avoidance_system's export functions read these fields
+//   ⚠ different from ALM's SolverLog: no c/μ schedule here, instead carrying the KKT residual + λ/S diagnostics
 // =====================================================================
 struct SolverLog {
-  // --- 標量結果 ---
-  int    total_iter    = 0;     // 實際主迴圈迭代數
-  int    converge_iter = -1;    // 收斂迭代 (-1 = 未收斂; phys_ok && stable_ok)
-  int    diverge_iter  = -1;    // 發散迭代 (-1 = 未發散; ‖G‖>1e9 或 NaN/Inf)
+  // --- scalar results ---
+  int    total_iter    = 0;     // actual number of main-loop iterations
+  int    converge_iter = -1;    // convergence iteration (-1 = not converged; phys_ok && stable_ok)
+  int    diverge_iter  = -1;    // divergence iteration (-1 = not diverged; ‖G‖>1e9 or NaN/Inf)
 
-  // --- 初末摘要 (供 export 對比) ---
+  // --- initial/final summary (for export comparison) ---
   double max_D_init     = 0.0;
   double max_D_final    = 0.0;
   int    violation_init = 0;
   int    violation_final= 0;
 
-  // --- 每迭代歷史 (長度 = total_iter) ---
-  // (使用者要求往外傳的成本拆解)
+  // --- per-iteration history (length = total_iter) ---
+  // (the cost breakdown requested to be passed outward)
   std::vector<double> L_history;       // Lagrangian L
-  std::vector<double> f_history;       // 純平滑成本 f = pw·fA + (1−pw)·fB
-  std::vector<double> fa_history;      // fA  (A 臂平滑成本)
-  std::vector<double> fb_history;      // fB  (B 臂平滑成本)
+  std::vector<double> f_history;       // pure smoothing cost f = pw·fA + (1−pw)·fB
+  std::vector<double> fa_history;      // fA  (Arm A smoothing cost)
+  std::vector<double> fb_history;      // fB  (Arm B smoothing cost)
   std::vector<double> penalty_history; // w_d · λᵀ · h
-  std::vector<double> maxD_history;    // 每迭代 max(D)
+  std::vector<double> maxD_history;    // per-iteration max(D)
 
-  // 步進診斷
-  std::vector<double> G_norm_history;  // ‖G‖ (全 V 梯度範數)
+  // step diagnostics
+  std::vector<double> G_norm_history;  // ‖G‖ (full-V gradient norm)
   std::vector<double> d_norm_history;  // ‖d‖
-  std::vector<double> alpha_history;   // 線搜索步長 α
+  std::vector<double> alpha_history;   // line-search step length α
 
-  // KKT 殘差分量 (純 Lagrangian 特有)
+  // KKT residual components (specific to the pure Lagrangian)
   std::vector<double> r_stat_history;  // ‖G_X‖           stationarity
   std::vector<double> r_prim_history;  // ‖h‖ = ‖D−θ+S²‖  primal feasibility
   std::vector<double> r_comp_history;  // ‖λ ⊙ S‖         complementarity
   std::vector<double> r_dual_history;  // ‖min(λ,0)‖       dual feasibility (λ≥0)
-  std::vector<double> lam_neg_history; // Σ min(λ,0)       λ 漂負累計
+  std::vector<double> lam_neg_history; // Σ min(λ,0)       cumulative λ drift negative
   std::vector<double> kkt_history;     // √(r_stat²+r_prim²+r_comp²+r_dual²)
-  std::vector<double> G_lam_norm_history; // ‖G_λ‖ (= r_prim·w_d, 分開記)
+  std::vector<double> G_lam_norm_history; // ‖G_λ‖ (= r_prim·w_d, recorded separately)
   std::vector<double> G_S_norm_history;   // ‖G_S‖
 
-  // λ / S 範圍 + 計數
+  // λ / S ranges + counts
   std::vector<double> lam_max_history;
   std::vector<double> lam_min_history;
   std::vector<double> S_max_history;
   std::vector<double> S_min_history;
   std::vector<int>    active_count_history;    // sum(λ > 1e-6)
   std::vector<int>    violation_count_history; // sum(D > θ)
-  std::vector<int>    ls_inner_history;        // 線搜索內層步數
-  std::vector<int>    ls_fallback_history;     // (Newton α=1 無線搜索, 恆 0)
-  std::vector<double> cond_H_history;          // [Newton] 每步 cond(H) 估計 (僅 verbose 計算, 否則 NaN)
+  std::vector<int>    ls_inner_history;        // line-search inner step count
+  std::vector<int>    ls_fallback_history;     // (Newton α=1 has no line search, always 0)
+  std::vector<double> cond_H_history;          // [Newton] per-step cond(H) estimate (computed only when verbose, otherwise NaN)
 
-  // --- 最終向量 ---
-  Eigen::VectorXd final_D;    // (num_C) 最終全約束 D
+  // --- final vectors ---
+  Eigen::VectorXd final_D;    // (num_C) final full-constraint D
   Eigen::VectorXd lam_final;  // (num_C)
   Eigen::VectorXd S_final;    // (num_C)
 };
@@ -102,33 +102,33 @@ class NewtonSolver
 {
 public:
   // [MATLAB] Dual_Arm_Lagrangian_Newton_v2(X, robotA_base, robotB_base, DANGER_THRESHOLD, path_weight)
-  //   X: (P+2) x 12 矩陣 (頭 + P 中間點 + 尾), 每列 [A1..6, B1..6] (degree)
+  //   X: (P+2) x 12 matrix (head + P interior points + tail), each row [A1..6, B1..6] (degrees)
   NewtonSolver(const Eigen::MatrixXd& X,
            const Eigen::Matrix4d& robotA_base,
            const Eigen::Matrix4d& robotB_base,
            double danger_threshold,
            double path_weight,
-           // 平滑權重 (MATLAB 預設全 1)
+           // smoothing weights (MATLAB default all 1)
            double smooth_w          = 0.3,
            double smooth_w_H        = 1.0,
            double smooth_w_T        = 1.0,
            double smooth_w_neighbor = 1.0);
 
-  // [MATLAB] run_newton (C++ 更名 run_lag): 回傳 log; X_final 由 get_X_final() 取得
+  // [MATLAB] run_newton (renamed run_lag in C++): returns log; X_final is obtained via get_X_final()
   SolverLog run_lag();
 
   // ===== Getter =====
-  // 取最終 X (num_X = 36 維), 即 V_final 的 X 段 (供 avoidance_system reshape)
+  // take the final X (num_X = 36 dims), i.e., the X segment of V_final (for avoidance_system to reshape)
   const Eigen::VectorXd& get_X_final() const { return X_final_; }
-  // 取完整 V_final (num_X + 2·num_C = 1116 維)
+  // take the full V_final (num_X + 2·num_C = 1116 dims)
   const Eigen::VectorXd& get_V_final() const { return V_final_; }
-  int get_M() const { return M_; }          // 中間優化點數
-  int get_num_D() const { return num_D_; }  // 每點約束數 (= K_AB)
+  int get_M() const { return M_; }          // number of interior optimization points
+  int get_num_D() const { return num_D_; }  // number of constraints per point (= K_AB)
 
   void set_verbose(bool v) { verbose_log_ = v; }
 
-  // [NEW] 純 Lagrangian 參數注入 (yaml → manager → avoidance_system → 此處; run_lag 前呼叫)
-  //   ⚠ λ_0 與 ALM 之 μ_0 不同物理意義: 此處 λ 是決策變數初值
+  // [NEW] pure Lagrangian parameter injection (yaml → manager → avoidance_system → here; call before run_lag)
+  //   ⚠ λ_0 has a different physical meaning from ALM's μ_0: here λ is the initial value of a decision variable
   void set_lag_params(double wd, double lam0, double s0,
                       double tol_phys_margin, double tol_stable,
                       double tol_stat, int max_iter)
@@ -137,127 +137,127 @@ public:
     lam0_            = lam0;   s0_ = s0;
     TOL_PHYS_MARGIN_ = tol_phys_margin;
     TOL_STABLE_      = tol_stable;
-    TOL_STAT_        = tol_stat;        // ⚠ Newton 專屬: stat_ok 啟用
+    TOL_STAT_        = tol_stat;        // ⚠ Newton-specific: stat_ok enabled
     max_solver_iter_ = max_iter;
-    rebuild_initial_V_();   // 以新 λ0/S0 重建 V_0 (覆蓋建構子初始化)
+    rebuild_initial_V_();   // rebuild V_0 with the new λ0/S0 (overriding the constructor initialization)
   }
 
-  // [NEW] 迭代上限注入 (與 ALM 家族 set_iter_limits 介面對齊)
+  // [NEW] iteration-limit injection (aligned with the ALM family's set_iter_limits interface)
   void set_iter_limits(int max_iter)
   {
     if (max_iter > 0) max_solver_iter_ = max_iter;
   }
 
-  // ===== Static 共用工具 (= MATLAB static 方法; 與 ALM/Newton 譜系位元一致) =====
+  // ===== Static shared utilities (= MATLAB static methods; bit-identical to the ALM/Newton lineage) =====
 
-  // [MATLAB] transmatrix(1, dir, deg): 旋轉矩陣 (角度 deg)
+  // [MATLAB] transmatrix(1, dir, deg): rotation matrix (angle deg)
   static Eigen::Matrix4d make_rotation(char axis, double angle_deg);
-  // [MATLAB] transmatrix(2, dir, val): 平移矩陣 (mm)
+  // [MATLAB] transmatrix(2, dir, val): translation matrix (mm)
   static Eigen::Matrix4d make_translation(char axis, double dist_mm);
 
-  // [MATLAB] calc_df(R1,R2,P1,P2): 球對危險因子 sj = exp(ln0.5/(Ri+Rj)^2 · d^2)
+  // [MATLAB] calc_df(R1,R2,P1,P2): sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 · d^2)
   static Eigen::MatrixXd calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                  const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2);
 
-  // [MATLAB] get_collision_masks(): 16x18 跨臂 mask (連桿級 cAB 展開到球級, K_AB=180)
+  // [MATLAB] get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level, K_AB=180)
   static Eigen::Array<bool, 16, 18> get_collision_masks();
 
-  // [MATLAB] robot_arm_bubble_RA610_1476: RA610 FK → 16 球 (4 底盤 + 12 手臂)
+  // [MATLAB] robot_arm_bubble_RA610_1476: RA610 FK → 16 spheres (4 base + 12 arm)
   static void robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
-  // [MATLAB] robot_arm_bubble_RA605_710: RA605 FK → 18 球 (8 底盤 + 10 手臂)
+  // [MATLAB] robot_arm_bubble_RA605_710: RA605 FK → 18 spheres (8 base + 10 arm)
   static void robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
 
 private:
-  // ===== 維度 (建構期決定) =====
-  int M_         = 0;   // 中間優化點數 (= P)
-  int N_         = 6;   // 每臂軸數
-  int num_D_     = 0;   // 每點約束數 (= K_AB, mask 過濾後)
+  // ===== Dimensions (determined at construction) =====
+  int M_         = 0;   // number of interior optimization points (= P)
+  int N_         = 6;   // axes per arm
+  int num_D_     = 0;   // number of constraints per point (= K_AB, after mask filtering)
   int num_X_     = 0;   // = 2 · M · N
   int num_C_     = 0;   // = M · num_D
   int total_dim_ = 0;   // = num_X + 2·num_C  (= 1116)
 
-  // ===== 機器人/問題設定 =====
+  // ===== Robot / problem configuration =====
   Eigen::Matrix4d A_base_ = Eigen::Matrix4d::Identity();
   Eigen::Matrix4d B_base_ = Eigen::Matrix4d::Identity();
-  Eigen::Matrix<double, 2, 6> X_H_;   // 頭點 [A; B]
-  Eigen::Matrix<double, 2, 6> X_T_;   // 尾點 [A; B]
-  Eigen::MatrixXd oriPos_;            // (M x 12) 中間點原始關節角 (平滑參考)
+  Eigen::Matrix<double, 2, 6> X_H_;   // head point [A; B]
+  Eigen::Matrix<double, 2, 6> X_T_;   // tail point [A; B]
+  Eigen::MatrixXd oriPos_;            // (M x 12) interior points' original joint angles (smoothing reference)
   Eigen::VectorXd Xm_initial_;        // V_0 = [X_0; λ_0; S_0]   (total_dim)
-  Eigen::VectorXd V_final_;           // (total_dim) 結果 V
-  Eigen::VectorXd X_final_;           // (num_X) 結果 V 的 X 段
+  Eigen::VectorXd V_final_;           // (total_dim) result V
+  Eigen::VectorXd X_final_;           // (num_X) the X segment of the result V
 
   double danger_threshold_ = 0.35;
   double path_weight_      = 0.5;
-  double delta_            = 0.01;   // 有限差分擾動 h (FK 與 cost FD 共用, = MATLAB delta)
+  double delta_            = 0.01;   // finite-difference perturbation h (shared by FK and cost FD, = MATLAB delta)
 
-  // 平滑成本權重 (= MATLAB smooth_weights, 預設全 1)
+  // smoothing cost weights (= MATLAB smooth_weights, default all 1)
   double smooth_w_          = 0.3;
   double smooth_w_H_        = 1.0;
   double smooth_w_T_        = 1.0;
   double smooth_w_neighbor_ = 1.0;
 
-  // ===== 純 Lagrangian 參數 (= Newton_v2 預設) =====
-  double wd_               = 1.0;    // 對偶強度 (penalty 係數)
-  double lam0_             = 30.0;   // λ_0  ⚠ 註解寫 10, 實際 code = 30
+  // ===== Pure Lagrangian parameters (= Newton_v2 defaults) =====
+  double wd_               = 1.0;    // dual strength (penalty coefficient)
+  double lam0_             = 30.0;   // λ_0  ⚠ the comment says 10, the actual code = 30
   double s0_               = 1.0;    // S_0  (S²=1)
   double TOL_PHYS_MARGIN_  = 0.01;   // max_D ≤ θ + margin
-  double TOL_STABLE_       = 0.01;   // |Δmax_D| ≤ TOL_STABLE (原 MATLAB 值 0.005, 調整為 0.01)
-  double TOL_STAT_         = 0.1;    // ⚠ Newton 啟用: ‖G‖ ≤ TOL_STAT (GD/CG 停用)
+  double TOL_STABLE_       = 0.01;   // |Δmax_D| ≤ TOL_STABLE (original MATLAB value 0.005, adjusted to 0.01)
+  double TOL_STAT_         = 0.1;    // ⚠ enabled for Newton: ‖G‖ ≤ TOL_STAT (disabled for GD/CG)
   int    max_solver_iter_  = 500;
 
   bool   verbose_log_      = false;
 
-  // mask → 線性索引 (16x18 中為 true 的位置, column-major)
+  // mask → linear indices (positions that are true in the 16x18, column-major)
   std::vector<int> lin_idx_AB_;
   int K_AB_ = 0;
 
-  // ===== 索引輔助 (V = [X; λ; S], 全 0-indexed) =====
-  inline int idx_Xam(int m) const { return m * 2 * N_; }            // 第 m 點 A 臂 6 軸起點
-  inline int idx_Xbm(int m) const { return m * 2 * N_ + N_; }       // 第 m 點 B 臂 6 軸起點
-  inline int idx_Xm (int m) const { return m * 2 * N_; }            // 第 m 點 [Xa;Xb] 12 軸起點
-  inline int idx_lam(int m) const { return num_X_ + m * num_D_; }   // 第 m 點 λ 起點 (V 全域)
-  inline int idx_Sm (int m) const { return num_X_ + num_C_ + m * num_D_; } // 第 m 點 S 起點 (V 全域)
-  inline int idx_lam_local(int m) const { return m * num_D_; }      // 第 m 點 λ 起點 (λ 區內)
+  // ===== Index helpers (V = [X; λ; S], all 0-indexed) =====
+  inline int idx_Xam(int m) const { return m * 2 * N_; }            // start of point m's Arm A 6 axes
+  inline int idx_Xbm(int m) const { return m * 2 * N_ + N_; }       // start of point m's Arm B 6 axes
+  inline int idx_Xm (int m) const { return m * 2 * N_; }            // start of point m's [Xa;Xb] 12 axes
+  inline int idx_lam(int m) const { return num_X_ + m * num_D_; }   // start of point m's λ (global V)
+  inline int idx_Sm (int m) const { return num_X_ + num_C_ + m * num_D_; } // start of point m's S (global V)
+  inline int idx_lam_local(int m) const { return m * num_D_; }      // start of point m's λ (within the λ region)
 
-  // ===== 內層數值方法 (= MATLAB instance 方法) =====
-  Eigen::VectorXd compute_Dm(const Eigen::VectorXd& X, int m) const;     // 第 m 點 D (num_D)
-  Eigen::VectorXd compute_Dx_all(const Eigen::VectorXd& X) const;        // 全點 D (num_C)
+  // ===== Inner numerical methods (= MATLAB instance methods) =====
+  Eigen::VectorXd compute_Dm(const Eigen::VectorXd& X, int m) const;     // D at point m (num_D)
+  Eigen::VectorXd compute_Dx_all(const Eigen::VectorXd& X) const;        // D over all points (num_C)
   void compute_D_cache(const Eigen::VectorXd& V,
                        Eigen::MatrixXd& D_base,                          // (num_D x M)
-                       std::vector<Eigen::MatrixXd>& D_plus,             // M 個 (num_D x 12) 前向
-                       std::vector<Eigen::MatrixXd>& D_minus) const;     // M 個 (num_D x 12) 後向 (中心差分)
+                       std::vector<Eigen::MatrixXd>& D_plus,             // M matrices (num_D x 12) forward
+                       std::vector<Eigen::MatrixXd>& D_minus) const;     // M matrices (num_D x 12) backward (central difference)
   Eigen::VectorXd compute_G_smooth(const Eigen::VectorXd& V) const;      // ∇_X f (num_X)
   Eigen::VectorXd compute_G(const Eigen::VectorXd& V,
                             const Eigen::MatrixXd& D_base,
-                            const std::vector<Eigen::MatrixXd>& D_plus) const;  // 完整 KKT 殘差 (total_dim)
+                            const std::vector<Eigen::MatrixXd>& D_plus) const;  // full KKT residual (total_dim)
   double cost_function_L(const Eigen::VectorXd& V, Eigen::VectorXd& Dx_all_out) const;
   double cost_function_F(const Eigen::VectorXd& V) const;
   void   cost_function_F_split(const Eigen::VectorXd& V,
-                               double& f, double& fa, double& fb) const;  // [NEW] 拆 fa/fb 往外傳
+                               double& f, double& fa, double& fb) const;  // [NEW] split out fa/fb to pass outward
   double cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& Xori,
                  const Eigen::RowVectorXd& XH, const Eigen::RowVectorXd& XT) const;
-  // [MATLAB] compute_H_smooth: 平滑項 Hessian ∇²_X f (全 num_X×num_X 稠密 FD; 鄰點耦合非 block-diag)
+  // [MATLAB] compute_H_smooth: smoothing-term Hessian ∇²_X f (full num_X×num_X dense FD; neighbor coupling is not block-diag)
   Eigen::MatrixXd compute_H_smooth(const Eigen::VectorXd& V) const;
-  // [MATLAB] weighted_D_sum: w_d·Σ λ⊙D(Xm_local) (Hessian 非對角雙擾動用)
+  // [MATLAB] weighted_D_sum: w_d·Σ λ⊙D(Xm_local) (used for the Hessian off-diagonal double perturbation)
   double weighted_D_sum(const Eigen::VectorXd& Xm_local, const Eigen::VectorXd& lam_m) const;
-  // [MATLAB] compute_H: 完整 1116×1116 9-block KKT Hessian
+  // [MATLAB] compute_H: the full 1116×1116 9-block KKT Hessian
   Eigen::MatrixXd compute_H(const Eigen::VectorXd& V,
                             const Eigen::MatrixXd& D_base,
                             const std::vector<Eigen::MatrixXd>& D_plus,
                             const std::vector<Eigen::MatrixXd>& D_minus) const;
 
-  // 以當前 lam0_/s0_/X 重建 V_0 (建構子 + set_lag_params 共用)
+  // rebuild V_0 from the current lam0_/s0_/X (shared by the constructor + set_lag_params)
   void rebuild_initial_V_();
 
-  // ===== 包覆球常數 (compile-time, 於 .cpp 用 {...} 初始化; 與 ALM 位元一致) =====
-  static const std::vector<BubbleDef> PEDESTAL_A;  // RA610 底盤 4 球
-  static const std::vector<BubbleDef> BUBBLES_A;   // RA610 手臂 12 球
-  static const std::vector<BubbleDef> PEDESTAL_B;  // RA605 底盤 8 球
-  static const std::vector<BubbleDef> BUBBLES_B;   // RA605 手臂 10 球
+  // ===== Bounding-sphere constants (compile-time, initialized with {...} in the .cpp; bit-identical to ALM) =====
+  static const std::vector<BubbleDef> PEDESTAL_A;  // RA610 base 4 spheres
+  static const std::vector<BubbleDef> BUBBLES_A;   // RA610 arm 12 spheres
+  static const std::vector<BubbleDef> PEDESTAL_B;  // RA605 base 8 spheres
+  static const std::vector<BubbleDef> BUBBLES_B;   // RA605 arm 10 spheres
 };
 
 }  // namespace dual_arm_lag_newton_planner
