@@ -52,7 +52,7 @@ public:
                   const Eigen::MatrixXd& B_waypoints,
                   double path_weight,
                   double danger_threshold    = 0.35,
-                  // the following are tunable parameters (with defaults; if not passed, MATLAB defaults are used)
+                  // the following are tunable parameters (defaults shown; override as needed)
                   double collision_tolerance = 0.1,
                   double fix_tolerance       = 0.1,
                   int    max_refinement_iter = 15,
@@ -61,7 +61,7 @@ public:
                   double smooth_w_T          = 1.0,
                   double smooth_w_neighbor   = 1.0);
 
-  // [MATLAB] run_optimization: the collision-repair main loop
+  //  run_optimization: the collision-repair main loop
   void run_optimization();
 
   // ===== Getters (only getters are exposed externally) =====
@@ -125,7 +125,9 @@ private:
   std::vector<double> time_ms_;            // inner-loop time per round
   std::vector<IterLogEntry> iter_log_;
 
-  // ===== Private methods (= MATLAB private) =====
+  // ===== Private methods (steps of the outer collision-repair loop) =====
+  //   generate_initial_trajectory -> check_collision -> find_collision_targets
+  //   -> run_solver_global -> regenerate_trajectory_global
   void generate_initial_trajectory();
   void check_collision(const Trajectory& traj,
                        Eigen::VectorXd& path_D_max, bool& is_collision,
