@@ -71,7 +71,7 @@ All source code (the core algorithm + the MoveIt plugin interface) is compiled i
 
 ### Outer Level: Collision-Repair Loop ( <code>AvoidanceSystem::run_optimization</code> )
 
-><p align="justify">
+```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │ Clamped Cubic Spline generates the initial trajectory (Arm A/B: start -> goal)   │
 │      |                                                                           │
@@ -96,7 +96,7 @@ All source code (the core algorithm + the MoveIt plugin interface) is compiled i
 │      v                                                                           │
 │ recompute max_D(t), back to "danger check" (up to max_refinement_iter rounds)    │
 └──────────────────────────────────────────────────────────────────────────────────┘
-</p>
+```
 
 ### Inner Level: ALM Conjugate-Gradient Solver ( <code>CgSolver::run_alm</code> )
 
