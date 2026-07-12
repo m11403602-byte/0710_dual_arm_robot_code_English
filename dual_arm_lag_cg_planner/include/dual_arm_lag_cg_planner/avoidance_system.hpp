@@ -5,8 +5,6 @@
 //   call the inner CG optimization -> Spline reconstruction -> re-check (up to max_refinement_iter rounds)
 //   includes CSV export (all data export except plotting)
 //
-//   [MATLAB] corresponding class: Dual_Arm_avoidance_system_v3
-//   all in degrees; independent of MoveIt (pure math, usable standalone)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_CG_PLANNER_AVOIDANCE_SYSTEM_HPP
 #define DUAL_ARM_LAG_CG_PLANNER_AVOIDANCE_SYSTEM_HPP
@@ -19,7 +17,7 @@
 namespace dual_arm_lag_cg_planner
 {
 
-// [MATLAB] trajectory struct
+// Trajectory struct
 struct Trajectory {
   Eigen::VectorXd time;   // (T)   step index
   Eigen::MatrixXd posA;   // (Tx6) Arm A joint angles
@@ -27,17 +25,17 @@ struct Trajectory {
   Eigen::MatrixXd pos;    // (Tx12) [posA, posB]
 };
 
-// [MATLAB] the indices returned by find_collision_targets
+// The CollisionIndices returned by find_collision_targets
 struct CollisionIndices {
   int minidx = 0;
   int maxidx = 0;
   std::vector<int> targets;   // 5 control points (0-indexed): [Head, q1, peak, q3, Tail]
 };
 
-// [MATLAB] iter_log entry (snapshot of each outer repair round, for export)
+// IterLogEntry (snapshot of each outer repair round, for export)
 struct IterLogEntry {
-  Trajectory          traj_in;       // pre-repair trajectory
-  Trajectory          traj_out;      // post-repair trajectory
+  Trajectory          traj_in;        // pre-repair trajectory
+  Trajectory          traj_out;       // post-repair trajectory
   Eigen::VectorXd     path_D_max_in;  // per-step max_D before repair
   Eigen::VectorXd     path_D_max_out; // per-step max_D after repair
   std::vector<int>    targets_in;     // 5 points (pre-repair index)
@@ -48,7 +46,7 @@ struct IterLogEntry {
 class AvoidanceSystem
 {
 public:
-  // [MATLAB] constructor (A_waypoints, B_waypoints, path_weight, DANGER_THRESHOLD=0.4)
+  //   Constructor (A_waypoints, B_waypoints, path_weight, DANGER_THRESHOLD=0.4)
   //   A_waypoints/B_waypoints: 2x6 (start row + goal row), degrees
   AvoidanceSystem(const Eigen::MatrixXd& A_waypoints,
                   const Eigen::MatrixXd& B_waypoints,
