@@ -9,10 +9,10 @@ request_adapters: >-
 
 # ===== Commonly tuned parameters =====
 path_weight: 0.5            # A/B arm cost weight pw*fA+(1-pw)*fB, range [0,1]
-                            #   larger: the avoidance amplitude of RA610-1476-GC2 (big_arm) becomes smaller, that of RA605-710-GC2 (small_arm) larger
-                            #   smaller: the avoidance amplitude of RA610-1476-GC2 (big_arm) becomes larger, that of RA605-710-GC2 (small_arm) smaller
-danger_threshold: 0.35       # danger-factor threshold; this value + collision_tolerance = collision boundary (0.5); their sum must not exceed 0.5 (exceeding it misses genuine collisions)
-collision_tolerance: 0.15    # collision-detection buffer band (this value = collision boundary (0.5) - danger_threshold)
+                            # larger: the avoidance amplitude of RA610-1476-GC2 (big_arm) becomes smaller, that of RA605-710-GC2 (small_arm) larger
+                            # smaller: the avoidance amplitude of RA610-1476-GC2 (big_arm) becomes larger, that of RA605-710-GC2 (small_arm) smaller
+danger_threshold: 0.35      # danger-factor threshold; this value + collision_tolerance = collision boundary (0.5); their sum must not exceed 0.5 (exceeding it misses genuine collisions)
+collision_tolerance: 0.15   # collision-detection buffer band (this value = collision boundary (0.5) - danger_threshold)
 fix_tolerance: 0.1          # find_targets leading/trailing clearance ratio
 max_refinement_iter: 15     # maximum number of outer repair rounds
 
@@ -33,7 +33,7 @@ joint_prefix_B: "small_joint_"    # Arm B (RA605): small_joint_1 ~ small_joint_6
 
 # ===== Time parameterization (handled inside the plugin) =====
 time_optimal: true          # true=TOTG time-optimal; false=custom equal-interval
-path_total_time: 20.0        # (when time_optimal=false) target total trajectory time (seconds)
+path_total_time: 20.0       # (when time_optimal=false) target total trajectory time (seconds)
 min_time_interval: 0.05     # (when time_optimal=false) minimum time interval per point (seconds)
 
 # ===== Diagnostic output (all disabled by default) =====
