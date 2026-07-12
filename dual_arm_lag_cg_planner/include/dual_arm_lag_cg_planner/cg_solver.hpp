@@ -18,9 +18,12 @@
 //     the pure Lagrangian is linear in λ → a saddle point, so ‖G‖ does not converge to 0;
 //     λ drifts toward feasibility rather than KKT stationarity. Hence feasibility + stability are used as the criterion.
 //
-//   [MATLAB] corresponding class: Dual_Arm_Lagrangian_Gradient_v2
-//   coordinates/units: all in degrees (consistent with MATLAB); distances in mm
-//   the geometry (FK/spheres/calc_df/mask) is bit-identical to the ALM/Newton lineage (the same robot model)
+//   coordinates/units: joint angles in degrees; distances in mm
+//   geometry pipeline (executed each iteration of run_lag, via compute_D_cache/compute_G):
+//     robot_arm_bubble_RA610/RA605 (FK -> bounding spheres)
+//     -> calc_df (sphere-pair danger factor)
+//     -> get_collision_masks (cross-arm mask, K_AB=180)
+//     -> compute_Dm / compute_Dx_all (per-point / all-point constraint D)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_CG_PLANNER_GD_SOLVER_HPP
 #define DUAL_ARM_LAG_CG_PLANNER_GD_SOLVER_HPP
@@ -32,7 +35,7 @@
 namespace dual_arm_lag_cg_planner
 {
 
-// [MATLAB] bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
+// Bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
 struct BubbleDef {
   int    link_id;   // which link it is attached to (arm_frame, 0-indexed); base spheres use -1
   double radius;
@@ -99,7 +102,7 @@ struct SolverLog {
 class CgSolver
 {
 public:
-  // [MATLAB] Dual_Arm_Lagrangian_Gradient_v2(X, robotA_base, robotB_base, DANGER_THRESHOLD, path_weight)
+  //   Constructor (X, robotA_base, robotB_base, DANGER_THRESHOLD, path_weight)
   //   X: (P+2) x 12 matrix (head + P interior points + tail), each row [A1..6, B1..6] (degrees)
   CgSolver(const Eigen::MatrixXd& X,
            const Eigen::Matrix4d& robotA_base,
