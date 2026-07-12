@@ -186,10 +186,12 @@ For the default values and descriptions of every parameter, see <a href="PARAMET
 
 ## Directory Structure
 
+<p align="justify">
 - <b> Root-directory files </b> ( <code>CMakeLists.txt</code> / <code>package.xml</code> / <code>*.xml</code> / <code>README.md</code> / <code>PARAMETERS.md</code> ) : <b> the build & description layer </b> — defines how the package is compiled and provides the external documentation.
-- <p align="justify"><b> <code>config/</code> </b> : <b> the runtime-parameter layer </b> — stores the yaml parameters loaded when move_group starts; must be copied to <code>hiwin_dual_arm/config/</code></p> .
+- <b> <code>config/</code> </b> : <b> the runtime-parameter layer </b> — stores the yaml parameters loaded when move_group starts; must be copied to <code>hiwin_dual_arm/config/</code>.
 - <b> <code>include/dual_arm_alm_cg_planner/</code> </b> : <b> the interface-declaration layer </b> .
 - <b> <code>src/</code> </b> : <b> the algorithm-implementation layer </b> .
+</p> 
 
 ```
 dual_arm_alm_cg_planner/
