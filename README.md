@@ -206,7 +206,7 @@ ros2 service call /gpio_controller/set_io hiwin_msgs/srv/SetIO \
 In the <b> MotionPlanning </b> panel on the left of RViz → <b> Context </b> tab → <b> Planning Library </b> drop-down menu, select one of the 6 <code>dual_arm_*</code> planners.
 </p>
 
-<p align="center"><img src="docs/images/rviz_context.png" alt="RViz planning screen Context" width="600"></p>
+<p align="center"><img src="docs/images/rviz_Context.png" alt="RViz planning screen Context" width="600"></p>
 
 ---
 
@@ -262,7 +262,7 @@ The planner requires both a "start" and a "goal" before it can compute a collisi
 Planning tab: set Start State to <code>&lt;current state&gt;</code> and uncheck <b> Query Start State </b>.
 </p>
 
-<p align="center"><img src="docs/images/rviz_planning.png" alt="RViz planning screen Planning" width="800"></p>
+<p align="center"><img src="docs/images/rviz_Planning.png" alt="RViz planning screen Planning" width="800"></p>
 
 <p align="justify">
 Joints page: adjust the target joint angles axis by axis using the sliders; this and dragging the marker are two methods that can be used in combination.
