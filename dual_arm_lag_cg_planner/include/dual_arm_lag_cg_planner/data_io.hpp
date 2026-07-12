@@ -1,7 +1,7 @@
 // =====================================================================
 // data_io.hpp — CSV writing utility (pure std, zero dependencies)
 // =====================================================================
-//   multiple sheets map to multiple files (MATLAB writecell 'Sheet' -> separate .csv files)
+//   each logical "sheet" maps to a separate .csv file
 //   write only, no read (waypoints are provided directly by the caller)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_CG_PLANNER_DATA_IO_HPP
@@ -14,14 +14,14 @@
 namespace dual_arm_lag_cg_planner
 {
 
-// write a matrix to CSV (with header)
+//   write a matrix to CSV (with header)
 //   header: column names (length must = mat.cols(); if empty, no header is written)
 //   mat:    data (one row per record)
 void write_csv(const std::string& path,
                const std::vector<std::string>& header,
                const Eigen::MatrixXd& mat);
 
-// write a CSV with "mixed header + string first column + numeric values" (for tables like Targets whose first column is a Pt name)
+//   write a CSV with "mixed header + string first column + numeric values" (for tables like Targets whose first column is a Pt name)
 //   row_labels: the first-column string of each row (length = mat.rows())
 //   header:     column names (including the first column, length = mat.cols()+1)
 void write_csv_labeled(const std::string& path,

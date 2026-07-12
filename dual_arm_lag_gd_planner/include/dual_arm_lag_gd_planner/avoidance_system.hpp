@@ -1,11 +1,10 @@
 // =====================================================================
-// avoidance_system.hpp — Layer 2: outer collision-repair system (= MATLAB System v3)
+// avoidance_system.hpp — Layer 2: outer collision-repair system
 // =====================================================================
 //   outer collision-repair loop: Clamped Spline initial trajectory -> collision detection -> find targets ->
 //   call the inner CG optimization -> Spline reconstruction -> re-check (up to max_refinement_iter rounds)
 //   includes CSV export (all data export except plotting)
 //
-//   [MATLAB] corresponding class: Dual_Arm_avoidance_system_v3
 //   all in degrees; independent of MoveIt (pure math, usable standalone)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_GD_PLANNER_AVOIDANCE_SYSTEM_HPP
@@ -19,7 +18,7 @@
 namespace dual_arm_lag_gd_planner
 {
 
-// [MATLAB] trajectory struct
+// trajectory struct
 struct Trajectory {
   Eigen::VectorXd time;   // (T)   step index
   Eigen::MatrixXd posA;   // (Tx6) Arm A joint angles
@@ -27,14 +26,14 @@ struct Trajectory {
   Eigen::MatrixXd pos;    // (Tx12) [posA, posB]
 };
 
-// [MATLAB] the indices returned by find_collision_targets
+// the indices returned by find_collision_targets
 struct CollisionIndices {
   int minidx = 0;
   int maxidx = 0;
   std::vector<int> targets;   // 5 control points (0-indexed): [Head, q1, peak, q3, Tail]
 };
 
-// [MATLAB] iter_log entry (snapshot of each outer repair round, for export)
+// iter_log entry (snapshot of each outer repair round, for export)
 struct IterLogEntry {
   Trajectory          traj_in;       // pre-repair trajectory
   Trajectory          traj_out;      // post-repair trajectory
@@ -48,13 +47,13 @@ struct IterLogEntry {
 class AvoidanceSystem
 {
 public:
-  // [MATLAB] constructor (A_waypoints, B_waypoints, path_weight, DANGER_THRESHOLD=0.4)
+  // constructor (A_waypoints, B_waypoints, path_weight, DANGER_THRESHOLD=0.4)
   //   A_waypoints/B_waypoints: 2x6 (start row + goal row), degrees
   AvoidanceSystem(const Eigen::MatrixXd& A_waypoints,
                   const Eigen::MatrixXd& B_waypoints,
                   double path_weight,
                   double danger_threshold    = 0.35,
-                  // the following are tunable parameters (with defaults; if not passed, MATLAB defaults are used)
+                  // the following are tunable parameters (with defaults used if not passed)
                   double collision_tolerance = 0.1,
                   double fix_tolerance       = 0.1,
                   int    max_refinement_iter = 15,
@@ -63,7 +62,7 @@ public:
                   double smooth_w_T          = 1.0,
                   double smooth_w_neighbor   = 1.0);
 
-  // [MATLAB] run_optimization: the collision-repair main loop
+  // run_optimization: the collision-repair main loop
   void run_optimization();
 
   // ===== Getters (only getters are exposed externally) =====
@@ -127,7 +126,7 @@ private:
   std::vector<double> time_ms_;            // inner-loop time per round
   std::vector<IterLogEntry> iter_log_;
 
-  // ===== Private methods (= MATLAB private) =====
+  // ===== Private methods =====
   void generate_initial_trajectory();
   void check_collision(const Trajectory& traj,
                        Eigen::VectorXd& path_D_max, bool& is_collision,

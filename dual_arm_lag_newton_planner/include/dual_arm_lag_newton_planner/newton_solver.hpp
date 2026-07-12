@@ -1,6 +1,5 @@
 // =====================================================================
 // newton_solver.hpp — Layer 1: pure Lagrangian inner optimizer (full-dimension Newton)
-//   = MATLAB Dual_Arm_Lagrangian_Newton_v2
 // =====================================================================
 //   pure Lagrangian (S²-slack) + full-dimension Newton (1116×1116 KKT Hessian, LDLT) + α=1 pure step
 //   ⚠ a "different mathematical object" from the ALM lineage:
@@ -19,8 +18,7 @@
 //     Newton solves the full KKT system → ‖G‖ can be driven near 0, so stat_ok = (‖G‖ ≤ TOL_STAT) is meaningful.
 //     this is the key difference from GD/CG (for GD/CG, ‖G‖ does not converge at the saddle point, so stat_ok is disabled).
 //
-//   [MATLAB] corresponding class: Dual_Arm_Lagrangian_Newton_v2
-//   coordinates/units: all in degrees (consistent with MATLAB); distances in mm
+//   coordinates/units: all in degrees; distances in mm
 //   the geometry (FK/spheres/calc_df/mask) is bit-identical to the ALM/Newton lineage (the same robot model)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_NEWTON_PLANNER_GD_SOLVER_HPP
@@ -33,7 +31,7 @@
 namespace dual_arm_lag_newton_planner
 {
 
-// [MATLAB] bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
+// bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
 struct BubbleDef {
   int    link_id;   // which link it is attached to (arm_frame, 0-indexed); base spheres use -1
   double radius;
@@ -43,7 +41,7 @@ struct BubbleDef {
 // =====================================================================
 // SolverLog — the full trace returned by run_lag
 //   the outer avoidance_system's export functions read these fields
-//   ⚠ different from ALM's SolverLog: no c/μ schedule here, instead carrying the KKT residual + λ/S diagnostics
+//   no penalty c/μ schedule here; instead carries the KKT residual + λ/S diagnostics
 // =====================================================================
 struct SolverLog {
   // --- scalar results ---
@@ -101,20 +99,20 @@ struct SolverLog {
 class NewtonSolver
 {
 public:
-  // [MATLAB] Dual_Arm_Lagrangian_Newton_v2(X, robotA_base, robotB_base, DANGER_THRESHOLD, path_weight)
+  // constructor(X, robotA_base, robotB_base, danger_threshold, path_weight)
   //   X: (P+2) x 12 matrix (head + P interior points + tail), each row [A1..6, B1..6] (degrees)
   NewtonSolver(const Eigen::MatrixXd& X,
            const Eigen::Matrix4d& robotA_base,
            const Eigen::Matrix4d& robotB_base,
            double danger_threshold,
            double path_weight,
-           // smoothing weights (MATLAB default all 1)
+           // smoothing weights (default all 1)
            double smooth_w          = 0.3,
            double smooth_w_H        = 1.0,
            double smooth_w_T        = 1.0,
            double smooth_w_neighbor = 1.0);
 
-  // [MATLAB] run_newton (renamed run_lag in C++): returns log; X_final is obtained via get_X_final()
+  // run_lag: runs the Newton main loop; returns log, X_final is obtained via get_X_final()
   SolverLog run_lag();
 
   // ===== Getter =====
@@ -128,7 +126,7 @@ public:
   void set_verbose(bool v) { verbose_log_ = v; }
 
   // [NEW] pure Lagrangian parameter injection (yaml → manager → avoidance_system → here; call before run_lag)
-  //   ⚠ λ_0 has a different physical meaning from ALM's μ_0: here λ is the initial value of a decision variable
+  //   ⚠ λ here is the initial value of a decision variable, not an outer-updated penalty multiplier
   void set_lag_params(double wd, double lam0, double s0,
                       double tol_phys_margin, double tol_stable,
                       double tol_stat, int max_iter)
@@ -142,31 +140,31 @@ public:
     rebuild_initial_V_();   // rebuild V_0 with the new λ0/S0 (overriding the constructor initialization)
   }
 
-  // [NEW] iteration-limit injection (aligned with the ALM family's set_iter_limits interface)
+  // [NEW] iteration-limit injection (shared interface across the solver family)
   void set_iter_limits(int max_iter)
   {
     if (max_iter > 0) max_solver_iter_ = max_iter;
   }
 
-  // ===== Static shared utilities (= MATLAB static methods; bit-identical to the ALM/Newton lineage) =====
+  // ===== Static shared utilities =====
 
-  // [MATLAB] transmatrix(1, dir, deg): rotation matrix (angle deg)
+  // make_rotation: rotation matrix about axis by angle_deg
   static Eigen::Matrix4d make_rotation(char axis, double angle_deg);
-  // [MATLAB] transmatrix(2, dir, val): translation matrix (mm)
+  // make_translation: translation matrix along axis by dist_mm
   static Eigen::Matrix4d make_translation(char axis, double dist_mm);
 
-  // [MATLAB] calc_df(R1,R2,P1,P2): sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 · d^2)
+  // calc_df: sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 · d^2)
   static Eigen::MatrixXd calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                  const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2);
 
-  // [MATLAB] get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level, K_AB=180)
+  // get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level, K_AB=180)
   static Eigen::Array<bool, 16, 18> get_collision_masks();
 
-  // [MATLAB] robot_arm_bubble_RA610_1476: RA610 FK → 16 spheres (4 base + 12 arm)
+  // robot_arm_bubble_RA610: RA610 FK → 16 spheres (4 base + 12 arm)
   static void robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
-  // [MATLAB] robot_arm_bubble_RA605_710: RA605 FK → 18 spheres (8 base + 10 arm)
+  // robot_arm_bubble_RA605: RA605 FK → 18 spheres (8 base + 10 arm)
   static void robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
@@ -192,20 +190,20 @@ private:
 
   double danger_threshold_ = 0.35;
   double path_weight_      = 0.5;
-  double delta_            = 0.01;   // finite-difference perturbation h (shared by FK and cost FD, = MATLAB delta)
+  double delta_            = 0.01;   // finite-difference perturbation h (shared by FK and cost FD)
 
-  // smoothing cost weights (= MATLAB smooth_weights, default all 1)
+  // smoothing cost weights (default all 1)
   double smooth_w_          = 0.3;
   double smooth_w_H_        = 1.0;
   double smooth_w_T_        = 1.0;
   double smooth_w_neighbor_ = 1.0;
 
-  // ===== Pure Lagrangian parameters (= Newton_v2 defaults) =====
+  // ===== Pure Lagrangian parameters (default values) =====
   double wd_               = 1.0;    // dual strength (penalty coefficient)
-  double lam0_             = 30.0;   // λ_0  ⚠ the comment says 10, the actual code = 30
+  double lam0_             = 30.0;   // λ_0  ⚠ default here is 30, not 10
   double s0_               = 1.0;    // S_0  (S²=1)
   double TOL_PHYS_MARGIN_  = 0.01;   // max_D ≤ θ + margin
-  double TOL_STABLE_       = 0.01;   // |Δmax_D| ≤ TOL_STABLE (original MATLAB value 0.005, adjusted to 0.01)
+  double TOL_STABLE_       = 0.01;   // |Δmax_D| ≤ TOL_STABLE
   double TOL_STAT_         = 0.1;    // ⚠ enabled for Newton: ‖G‖ ≤ TOL_STAT (disabled for GD/CG)
   int    max_solver_iter_  = 500;
 
@@ -223,7 +221,7 @@ private:
   inline int idx_Sm (int m) const { return num_X_ + num_C_ + m * num_D_; } // start of point m's S (global V)
   inline int idx_lam_local(int m) const { return m * num_D_; }      // start of point m's λ (within the λ region)
 
-  // ===== Inner numerical methods (= MATLAB instance methods) =====
+  // ===== Inner numerical methods =====
   Eigen::VectorXd compute_Dm(const Eigen::VectorXd& X, int m) const;     // D at point m (num_D)
   Eigen::VectorXd compute_Dx_all(const Eigen::VectorXd& X) const;        // D over all points (num_C)
   void compute_D_cache(const Eigen::VectorXd& V,
@@ -240,11 +238,11 @@ private:
                                double& f, double& fa, double& fb) const;  // [NEW] split out fa/fb to pass outward
   double cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& Xori,
                  const Eigen::RowVectorXd& XH, const Eigen::RowVectorXd& XT) const;
-  // [MATLAB] compute_H_smooth: smoothing-term Hessian ∇²_X f (full num_X×num_X dense FD; neighbor coupling is not block-diag)
+  // compute_H_smooth: smoothing-term Hessian ∇²_X f (full num_X×num_X dense FD; neighbor coupling is not block-diag)
   Eigen::MatrixXd compute_H_smooth(const Eigen::VectorXd& V) const;
-  // [MATLAB] weighted_D_sum: w_d·Σ λ⊙D(Xm_local) (used for the Hessian off-diagonal double perturbation)
+  // weighted_D_sum: w_d·Σ λ⊙D(Xm_local) (used for the Hessian off-diagonal double perturbation)
   double weighted_D_sum(const Eigen::VectorXd& Xm_local, const Eigen::VectorXd& lam_m) const;
-  // [MATLAB] compute_H: the full 1116×1116 9-block KKT Hessian
+  // compute_H: the full 1116×1116 9-block KKT Hessian
   Eigen::MatrixXd compute_H(const Eigen::VectorXd& V,
                             const Eigen::MatrixXd& D_base,
                             const std::vector<Eigen::MatrixXd>& D_plus,
@@ -253,7 +251,7 @@ private:
   // rebuild V_0 from the current lam0_/s0_/X (shared by the constructor + set_lag_params)
   void rebuild_initial_V_();
 
-  // ===== Bounding-sphere constants (compile-time, initialized with {...} in the .cpp; bit-identical to ALM) =====
+  // ===== Bounding-sphere constants (compile-time, initialized with {...} in the .cpp) =====
   static const std::vector<BubbleDef> PEDESTAL_A;  // RA610 base 4 spheres
   static const std::vector<BubbleDef> BUBBLES_A;   // RA610 arm 12 spheres
   static const std::vector<BubbleDef> PEDESTAL_B;  // RA605 base 8 spheres

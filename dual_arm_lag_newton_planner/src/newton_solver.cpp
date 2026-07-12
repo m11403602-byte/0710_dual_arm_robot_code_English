@@ -1,10 +1,9 @@
 // =====================================================================
 // newton_solver.cpp — Layer 1 pure Lagrangian full-dimension Newton solver implementation
-//   = MATLAB Dual_Arm_Lagrangian_Newton_v2
 // =====================================================================
-//   the geometry layer (sphere constants / transmatrix / calc_df / mask / FK) with ALM, Newton
-//   is bit-identical across the lineage (the same robot model, verified item by item against the v2 MATLAB).
-//   the solver math layer (L / G / compute_H / run_lag) is ported per Newton_v2.
+//   the geometry layer (sphere constants / transmatrix / calc_df / mask / FK) is shared
+//   across the solver lineage (same robot model, kept bit-identical).
+//   the solver math layer (L / G / compute_H / run_lag) implements the pure-Lagrangian Newton method.
 // =====================================================================
 #include "dual_arm_lag_newton_planner/newton_solver.hpp"
 
@@ -17,8 +16,8 @@ namespace dual_arm_lag_newton_planner
 {
 
 // =====================================================================
-// bounding-sphere constants (= arm_r/arm_p/arm_frame, ped_* inside MATLAB robot_arm_bubble)
-//   ⚠ bit-identical to the ALM/Newton lineage — when changing the robot, all six packages must be modified in sync
+// bounding-sphere constants (per-link radius + local frame offset, pedestal + arm spheres)
+//   ⚠ shared across the solver lineage — when changing the robot, all packages must be modified in sync
 // =====================================================================
 const std::vector<BubbleDef> NewtonSolver::PEDESTAL_A = {
   { -1, 320.0,  220.0,  -65.0, 55.0 },
@@ -64,7 +63,7 @@ const std::vector<BubbleDef> NewtonSolver::BUBBLES_B = {
 };
 
 // =====================================================================
-// transmatrix → make_rotation / make_translation  (= MATLAB transmatrix)
+// make_rotation / make_translation: homogeneous transform builders
 // =====================================================================
 Eigen::Matrix4d NewtonSolver::make_rotation(char axis, double angle_deg)
 {
@@ -118,10 +117,10 @@ Eigen::MatrixXd NewtonSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::Ve
 // =====================================================================
 Eigen::Array<bool, 16, 18> NewtonSolver::get_collision_masks()
 {
-  // sphere → link ID (1-indexed, same as MATLAB sA/sB)
+  // sphere → link ID (1-indexed)
   static const int sA[16] = {1,1,1,1, 2, 3, 4,4,4,4, 5, 6,6,6, 7, 8};
   static const int sB[18] = {1,1,1,1,1,1,1,1, 2, 3, 4,4,4, 5, 6,6, 7, 8};
-  // [MATLAB] cAB: links 1~3 (base/pedestal/L1) all 0; links 4~8 all 1
+  // cAB: links 1~3 (base/pedestal/L1) all 0; links 4~8 all 1
   auto cAB = [](int rowLink, int /*colLink*/) -> bool { return rowLink >= 4; };
   Eigen::Array<bool, 16, 18> mask;
   for (int i = 0; i < 16; ++i)
@@ -162,7 +161,7 @@ void NewtonSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const d
   for (int i = 0; i < 7; ++i) {
     T_cum = T_cum * T[i];
     for (const BubbleDef& b : BUBBLES_A) {
-      if (b.link_id == i) {   // [MATLAB] arm_frame(j) == i-1 (0-indexed alignment)
+      if (b.link_id == i) {   // link_id aligned to 0-indexed frame i
         Eigen::Vector4d w = T_cum * Eigen::Vector4d(b.cx, b.cy, b.cz, 1.0);
         const int out_idx = NUM_PED + arm_k;
         bubble.row(out_idx) = w.head<3>().transpose();
@@ -219,7 +218,7 @@ void NewtonSolver::robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const d
 }
 
 // =====================================================================
-// constructor (= MATLAB Dual_Arm_Lagrangian_Newton_v2 constructor)
+// constructor: build dimensions, mask indices, head/tail/interior points, initial state
 // =====================================================================
 NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
                    const Eigen::Matrix4d& robotA_base,
@@ -235,11 +234,11 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
     smooth_w_(smooth_w), smooth_w_H_(smooth_w_H),
     smooth_w_T_(smooth_w_T), smooth_w_neighbor_(smooth_w_neighbor)
 {
-  // [MATLAB] M = size(X,1) - 2 (excluding head and tail); N = 6
+  // M = number of interior points, excluding head and tail; N = 6 axes per arm
   M_ = static_cast<int>(X.rows()) - 2;
   N_ = 6;
 
-  // [MATLAB] mask → linear indices (column-major, consistent with MATLAB logical indexing)
+  // mask → linear indices (column-major)
   Eigen::Array<bool, 16, 18> mask = get_collision_masks();
   lin_idx_AB_.clear();
   for (int col = 0; col < 18; ++col)
@@ -255,18 +254,18 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
 
   std::cout << "  [Mask] A×B: " << K_AB_ << " → num_D = " << num_D_ << "\n";
 
-  // [MATLAB] head/tail points X_H/X_T = [A; B]
+  // head/tail points X_H/X_T = [A; B]
   X_H_.row(0) = X.row(0).segment(0, 6);
   X_H_.row(1) = X.row(0).segment(6, 6);
   X_T_.row(0) = X.row(X.rows()-1).segment(0, 6);
   X_T_.row(1) = X.row(X.rows()-1).segment(6, 6);
 
-  // [MATLAB] interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
+  // interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
   oriPos_.resize(M_, 12);
   for (int m = 0; m < M_; ++m)
     oriPos_.row(m) = X.row(m + 1);
 
-  // [MATLAB] V_0 = [X_0; λ_0; S_0]; X_0 each point [A1..6, B1..6]
+  // V_0 = [X_0; λ_0; S_0]; X_0 each point [A1..6, B1..6]
   rebuild_initial_V_();
 
   std::cout << "  [Init] Max_D=" << compute_Dx_all(Xm_initial_.head(num_X_)).maxCoeff()
@@ -294,7 +293,7 @@ void NewtonSolver::rebuild_initial_V_()
   }
 
   // λ segment (num_C): all lam0_
-  //   [MATLAB] lam_init(Dx_init>θ)=30 is an entry point for future ablation; since lam0=30 it is equivalent to filling all
+  //   selectively initializing only violated constraints is a possible future ablation; since lam0=30 filling all is equivalent
   Xm_initial_.segment(num_X_, num_C_).setConstant(lam0_);
   // S segment (num_C): all s0_ (S² = s0_²)
   Xm_initial_.segment(num_X_ + num_C_, num_C_).setConstant(s0_);
@@ -316,7 +315,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 
   Eigen::MatrixXd sj = calc_df(rA, rB, bA, bB);   // 16x18
 
-  // [MATLAB] D_m = sj(mask_AB) → column-major take lin_idx_AB
+  // D_m = sj values at the masked sphere pairs → column-major take lin_idx_AB
   Eigen::VectorXd D_m(K_AB_);
   for (int k = 0; k < K_AB_; ++k) {
     const int idx = lin_idx_AB_[k];
@@ -325,7 +324,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
   return D_m;
 }
 
-// [MATLAB] compute_Dx_all: concatenation over all M points (num_C)
+// compute_Dx_all: concatenation of compute_Dm over all M points (num_C)
 Eigen::VectorXd NewtonSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 {
   Eigen::VectorXd Dx(num_C_);
@@ -336,7 +335,7 @@ Eigen::VectorXd NewtonSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 
 // =====================================================================
 // compute_D_cache: D_base (num_D x M) + D_plus + D_minus (central-difference cache)
-//   the Newton Hessian diagonal uses central differences, so D_minus is needed; corresponds to MATLAB compute_D_cache
+//   the Newton Hessian diagonal uses central differences, so D_minus is needed
 // =====================================================================
 void NewtonSolver::compute_D_cache(const Eigen::VectorXd& V,
                                Eigen::MatrixXd& D_base,
@@ -443,11 +442,11 @@ double NewtonSolver::cost_function_F(const Eigen::VectorXd& V) const
   return f;
 }
 
-// [NEW] split out fa/fb to pass outward (= the internal values of MATLAB cost_function_F, originally only debug-printed)
+// [NEW] split out fa/fb to pass outward (previously internal values of cost_function_F, only debug-printed)
 void NewtonSolver::cost_function_F_split(const Eigen::VectorXd& V,
                                      double& f, double& fa, double& fb) const
 {
-  // [MATLAB] X = reshape(V(1:num_X),12,[])'  → row m = [Xa_m, Xb_m]
+  // X = the X segment of V reshaped so row m = [Xa_m, Xb_m]
   Eigen::MatrixXd Xmat(M_, 12);
   for (int m = 0; m < M_; ++m)
     Xmat.row(m) = V.segment(idx_Xm(m), 12).transpose();
@@ -618,7 +617,7 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
     H(oS + i, oL + i) = H_lam_S_diag(i);   // symmetric
     H(oS + i, oS + i) = H_SS_diag(i);      // H_SS
   }
-  // symmetrization (= MATLAB triu(H)+triu(H,1)'): take the upper triangle as authoritative
+  // symmetrization: take the upper triangle as authoritative and mirror it down
   for (int i = 0; i < total_dim_; ++i)
     for (int j = 0; j < i; ++j) H(i, j) = H(j, i);
 
@@ -627,7 +626,6 @@ Eigen::MatrixXd NewtonSolver::compute_H(const Eigen::VectorXd& V,
 
 // =====================================================================
 // run_lag: the main loop (full-dimension Newton: d=-H\G LDLT, α=1 pure step)
-//   = MATLAB Dual_Arm_Lagrangian_Newton_v2.run_newton (renamed run_lag in C++)
 // =====================================================================
 SolverLog NewtonSolver::run_lag()
 {
@@ -671,9 +669,9 @@ SolverLog NewtonSolver::run_lag()
     }
 
     // Step 3: Newton direction d = -H⁻¹G
-    //   ⚠ single point of change: the KKT system is an indefinite saddle point; MATLAB `\` uses Bunch-Kaufman LDLᵀ;
-    //     here, per specification, Eigen LDLT is used (may be unstable for indefinite matrices — known/expected, documented).
-    //     if a closer match to MATLAB `\` is needed, switch to H.fullPivLu().solve(G) (one line).
+    //   ⚠ single point of change: the KKT system is an indefinite saddle point, so Eigen's LDLT
+    //     may be unstable here (known/expected, documented). For a more robust (but slower) solve,
+    //     switch to H.fullPivLu().solve(G) (one line).
     Eigen::VectorXd d = -H.ldlt().solve(G);
     // auto solver = H.ldlt();
     // Eigen::VectorXd d; // 1. declare the variable externally
@@ -694,7 +692,7 @@ SolverLog NewtonSolver::run_lag()
     //Eigen::VectorXd d = -H.bdcSvd(Eigen::ComputeThinU|Eigen::ComputeThinV).solve(G);
     const double d_norm = d.norm();
 
-    // Step 4: divergence detection (⚠ Newton only checks NaN/Inf; MATLAB's d_norm≥1e30 is commented out)
+    // Step 4: divergence detection (⚠ Newton only checks NaN/Inf; a d_norm≥1e30 threshold check is commented out below)
     if (!d.allFinite()) {
       std::cout << "\n  ★ divergence! iter=" << it << " ||G||=" << G_norm
                 << " ||d||=" << d_norm << " cond(H)≈" << cond_H << "\n";

@@ -1,5 +1,5 @@
 // =====================================================================
-// avoidance_system.hpp — Layer 2: outer collision-repair system (= MATLAB System v3)
+// avoidance_system.hpp — Layer 2: outer collision-repair system
 // =====================================================================
 //   outer collision-repair loop: Clamped Spline initial trajectory -> collision detection -> find targets ->
 //   call the inner CG optimization -> Spline reconstruction -> re-check (up to max_refinement_iter rounds)

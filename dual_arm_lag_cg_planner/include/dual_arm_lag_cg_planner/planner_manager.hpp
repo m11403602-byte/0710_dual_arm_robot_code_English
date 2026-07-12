@@ -59,7 +59,7 @@ public:
   // [NEW] diagnostic output (yaml switches, all disabled by default)
   std::string export_csv_prefix_;       // non-empty → export CSV after each planning run
   int         export_level_   = 0;      // [NEW] 0=no export, 1=standard 6 files, 2=full 9 files
-  // [NEW] pure Lagrangian parameters (default = Gradient_v2 values)
+  // [NEW] pure Lagrangian parameters (defaults match CgSolver)
   double lag_wd_ = 1.0; double lag_lam0_ = 30.0; double lag_s0_ = 1.0;
   double lag_tol_phys_ = 0.01; double lag_tol_stable_ = 0.01; int lag_max_iter_ = 500;
 

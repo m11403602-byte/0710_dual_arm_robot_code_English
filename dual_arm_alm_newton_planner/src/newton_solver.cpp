@@ -1,5 +1,5 @@
 // =====================================================================
-// newton_solver.cpp — Layer 1 Newton solver implementation (= MATLAB Dual_Arm_Inequality_ALM_Newton_v6)
+// newton_solver.cpp — Layer 1 Newton solver implementation
 // =====================================================================
 #include "dual_arm_alm_newton_planner/newton_solver.hpp"
 
@@ -12,10 +12,10 @@ namespace dual_arm_alm_newton_planner
 {
 
 // =====================================================================
-// bounding-sphere constants (= arm_r/arm_p/arm_frame, ped_* inside MATLAB robot_arm_bubble)
+// bounding-sphere constants for both robot arms
 // =====================================================================
 
-// [MATLAB] RA610 base 4 spheres (R=320, centers fixed in the T_base coordinate frame)
+// RA610 base 4 spheres (R=320, centers fixed in the T_base coordinate frame)
 const std::vector<BubbleDef> NewtonSolver::PEDESTAL_A = {
   { -1, 320.0,  220.0,  -65.0, 55.0 },
   { -1, 320.0,  220.0,  296.0, 55.0 },
@@ -23,7 +23,7 @@ const std::vector<BubbleDef> NewtonSolver::PEDESTAL_A = {
   { -1, 320.0, -220.0,  -64.0, 55.0 },
 };
 
-// [MATLAB] RA610 arm 12 spheres {link_id (arm_frame, 0-indexed), R, [x,y,z]}
+// RA610 arm 12 spheres {link_id (arm_frame, 0-indexed), R, [x,y,z]}
 const std::vector<BubbleDef> NewtonSolver::BUBBLES_A = {
   { 0, 280.0,    0.0,   0.0, 145.0 },
   { 1, 300.0,  -15.0,   0.0, -70.0 },
@@ -39,7 +39,7 @@ const std::vector<BubbleDef> NewtonSolver::BUBBLES_A = {
   { 6, 100.0,    0.0,   0.0,   0.0 },
 };
 
-// [MATLAB] RA605 base 8 spheres (R=350)
+// RA605 base 8 spheres (R=350)
 const std::vector<BubbleDef> NewtonSolver::PEDESTAL_B = {
   { -1, 350.0,  170.0,  290.0, 661.0 },
   { -1, 350.0, -170.0,  290.0, 661.0 },
@@ -51,7 +51,7 @@ const std::vector<BubbleDef> NewtonSolver::PEDESTAL_B = {
   { -1, 350.0,  185.0, -250.0, 231.0 },
 };
 
-// [MATLAB] RA605 arm 10 spheres
+// RA605 arm 10 spheres
 const std::vector<BubbleDef> NewtonSolver::BUBBLES_B = {
   { 0, 175.0,    0.0,    0.0,   85.0 },
   { 1, 135.0,    0.0,    0.0, -135.0 },
@@ -69,7 +69,7 @@ const std::vector<BubbleDef> NewtonSolver::BUBBLES_B = {
 // transmatrix -> make_rotation / make_translation
 // =====================================================================
 
-// [MATLAB] transmatrix(mode=1, dir, deg): rotation (angle deg)
+// make_rotation: rotation matrix about axis by angle_deg
 Eigen::Matrix4d NewtonSolver::make_rotation(char axis, double angle_deg)
 {
   const double cv = std::cos(angle_deg * M_PI / 180.0);
@@ -85,7 +85,7 @@ Eigen::Matrix4d NewtonSolver::make_rotation(char axis, double angle_deg)
   return m;
 }
 
-// [MATLAB] transmatrix(mode=2, dir, val): translation (mm)
+// make_translation: translation matrix along axis by dist_mm
 Eigen::Matrix4d NewtonSolver::make_translation(char axis, double dist_mm)
 {
   Eigen::Matrix4d m = Eigen::Matrix4d::Identity();
@@ -98,7 +98,7 @@ Eigen::Matrix4d NewtonSolver::make_translation(char axis, double dist_mm)
 // =====================================================================
 // calc_df: sphere-pair danger factor
 // =====================================================================
-// [MATLAB] sj_ij = exp( ln(0.5)/(R_i+R_j)^2 * d_ij^2 ); manual double loop replacing pdist2
+// sj_ij = exp( ln(0.5)/(R_i+R_j)^2 * d_ij^2 ); manual double loop over all sphere pairs
 Eigen::MatrixXd NewtonSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                   const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2)
 {
@@ -122,15 +122,15 @@ Eigen::MatrixXd NewtonSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::Ve
 // =====================================================================
 // get_collision_masks: 16x18 cross-arm mask
 // =====================================================================
-// [MATLAB] sA/sB sphere->link mapping; cAB link-level (rows 4~8 vs all = 1); mask = cAB(sA,sB)
+// sA/sB sphere->link mapping; cAB link-level (rows 4~8 vs all = 1); mask = cAB(sA,sB)
 Eigen::Array<bool, 16, 18> NewtonSolver::get_collision_masks()
 {
-  // sphere -> link ID (1-indexed, same as MATLAB)
+  // sphere -> link ID (1-indexed)
   static const int sA[16] = {1,1,1,1, 2, 3, 4,4,4,4, 5, 6,6,6, 7, 8};
   static const int sB[18] = {1,1,1,1,1,1,1,1, 2, 3, 4,4,4, 5, 6,6, 7, 8};
   // cAB 8x8: rows 1~3 (L0~L2, base side) all 0, rows 4~8 all 1 (1-indexed)
   auto cAB = [](int rowLink, int /*colLink*/) -> bool {
-    return rowLink >= 4;   // [MATLAB] cAB rows 4~8 are 1, the rest 0
+    return rowLink >= 4;   // cAB rows 4~8 are 1, the rest 0
   };
   Eigen::Array<bool, 16, 18> mask;
   for (int i = 0; i < 16; ++i)
@@ -142,7 +142,7 @@ Eigen::Array<bool, 16, 18> NewtonSolver::get_collision_masks()
 // =====================================================================
 // RA610 FK: 16 spheres (4 base + 12 arm) + T_ee
 // =====================================================================
-// [MATLAB] the base is already included in T_base; chain: T1=base*Tz(117), T2=Tz(448.5)*Rz(J1), ...
+// the base is already included in T_base; chain: T1=base*Tz(117), T2=Tz(448.5)*Rz(J1), ...
 void NewtonSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                       Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                       Eigen::Matrix4d& T_ee)
@@ -176,7 +176,7 @@ void NewtonSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const d
   for (int i = 0; i < 7; ++i) {
     T_cum = T_cum * T[i];
     for (const BubbleDef& b : BUBBLES_A) {
-      if (b.link_id == i) {   // [MATLAB] arm_frame(j) == i-1 (0-indexed alignment here)
+      if (b.link_id == i) {   // arm_frame(j) == i-1 (0-indexed alignment here)
         Eigen::Vector4d pt(b.cx, b.cy, b.cz, 1.0);
         Eigen::Vector4d w = T_cum * pt;
         const int out_idx = NUM_PED + arm_k;
@@ -237,7 +237,7 @@ void NewtonSolver::robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const d
 }
 
 // =====================================================================
-// constructor (= MATLAB Dual_Arm_Inequality_ALM_Newton_v6 constructor)
+// constructor: build dimensions, mask indices, head/tail/interior points, initial state
 // =====================================================================
 NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
                    const Eigen::Matrix4d& robotA_base,
@@ -255,10 +255,10 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
 {
   using std::vector;
 
-  // [MATLAB] M = size(X,1) - 2 (excluding head and tail)
+  // M = number of rows in X minus 2 (excluding head and tail)
   M_ = static_cast<int>(X.rows()) - 2;
 
-  // [MATLAB] mask -> linear indices (column-major, consistent with MATLAB reshape)
+  // mask -> linear indices (column-major)
   Eigen::Array<bool, 16, 18> mask = get_collision_masks();
   lin_idx_AB_.clear();
   for (int col = 0; col < 18; ++col)        // column-major: scan rows first, then advance columns
@@ -271,18 +271,18 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
   num_X_ = 2 * M_ * 6;
   num_C_ = M_ * num_D_;
 
-  // [MATLAB] head/tail points X_H/X_T = [A; B]
+  // head/tail points X_H/X_T = [A; B]
   X_H_.row(0) = X.row(0).segment(0, 6);
   X_H_.row(1) = X.row(0).segment(6, 6);
   X_T_.row(0) = X.row(X.rows()-1).segment(0, 6);
   X_T_.row(1) = X.row(X.rows()-1).segment(6, 6);
 
-  // [MATLAB] interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
+  // interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
   oriPos_.resize(M_, 12);
   for (int m = 0; m < M_; ++m)
     oriPos_.row(m) = X.row(m+1);   // rows 2..end-1
 
-  // [MATLAB] initial decision vector X_vec: each point [A1..6, B1..6]
+  // initial decision vector X_vec: each point [A1..6, B1..6]
   Xm_initial_.resize(num_X_);
   for (int m = 0; m < M_; ++m) {
     const int b = base_x(m);
@@ -292,7 +292,7 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
     }
   }
 
-  // [MATLAB] ALM initial values
+  // ALM initial values
   mu_ = Eigen::VectorXd::Constant(num_C_, 10.0);   // mu_0 = 10
   c_  = 5.0;
 
@@ -302,7 +302,7 @@ NewtonSolver::NewtonSolver(const Eigen::MatrixXd& X,
 // =====================================================================
 // compute_Dm: the danger-factor vector at point m (0-indexed) (num_D)
 // =====================================================================
-// [MATLAB] FK -> calc_df -> use lin_idx_AB to filter the sphere pairs within the mask
+// FK -> calc_df -> use lin_idx_AB to filter the sphere pairs within the mask
 Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 {
   const int b = base_x(m);
@@ -315,7 +315,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 
   Eigen::MatrixXd sj = calc_df(rA, rB, bA, bB);   // 16x18
 
-  // [MATLAB] sj_flat = reshape(sj,288,1) (column-major), take lin_idx_AB
+  // sj_flat = reshape(sj,288,1) (column-major), take lin_idx_AB
   Eigen::VectorXd D_m(K_AB_);
   for (int k = 0; k < K_AB_; ++k) {
     const int idx = lin_idx_AB_[k];
@@ -326,7 +326,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
   return D_m;
 }
 
-// [MATLAB] compute_Dx_all: concatenation over all M points (num_C)
+// compute_Dx_all: concatenation of compute_Dm over all M points (num_C)
 Eigen::VectorXd NewtonSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 {
   Eigen::VectorXd Dx(num_C_);
@@ -338,13 +338,13 @@ Eigen::VectorXd NewtonSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 // =====================================================================
 // compute_D_cache: D_base + D_plus + D_minus (central-difference cache, for the Newton Hessian)
 // =====================================================================
-// [MATLAB] D_base:(num_D x M), D_plus:(num_D x 12 x M) using vector<MatrixXd>
+// D_base:(num_D x M), D_plus:(num_D x 12 x M) using vector<MatrixXd>
 void NewtonSolver::compute_D_cache(const Eigen::VectorXd& X,
                                Eigen::MatrixXd& D_base,
                                std::vector<Eigen::MatrixXd>& D_plus,
                                std::vector<Eigen::MatrixXd>& D_minus) const
 {
-  // [MATLAB] central-difference cache: D_base, D_plus(+h), D_minus(-h)
+  // central-difference cache: D_base, D_plus(+h), D_minus(-h)
   //   D_plus  for the forward-difference gradient + the Hessian diagonal central difference
   //   D_minus for the Hessian diagonal central difference
   const double h = delta_;
@@ -367,7 +367,7 @@ void NewtonSolver::compute_D_cache(const Eigen::VectorXd& X,
   }
 }
 
-// [MATLAB] compute_Dm_local: compute D_m from a "single-point 12-dim local joint vector" (num_D x 1)
+// compute_Dm_local: compute D_m from a single-point 12-dim local joint vector (num_D x 1)
 //   used for the Hessian off-diagonal double perturbation (alm_penalty_sum) re-FK
 Eigen::VectorXd NewtonSolver::compute_Dm_local(const Eigen::VectorXd& Xm_local) const
 {
@@ -380,7 +380,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm_local(const Eigen::VectorXd& Xm_local) 
 
   Eigen::MatrixXd sj = calc_df(rA, rB, bA, bB);   // 16x18
 
-  // [MATLAB] sj_flat = reshape(sj,288,1) (column-major), take lin_idx_AB
+  // sj_flat = reshape(sj,288,1) (column-major), take lin_idx_AB
   Eigen::VectorXd D_m(K_AB_);
   for (int k = 0; k < K_AB_; ++k) {
     const int idx = lin_idx_AB_[k];
@@ -391,7 +391,7 @@ Eigen::VectorXd NewtonSolver::compute_Dm_local(const Eigen::VectorXd& Xm_local) 
   return D_m;
 }
 
-// [MATLAB] alm_penalty_from_D: psi = (1/2c)*sum{[max(0,mu+c*g)]^2 - mu^2}
+// alm_penalty_from_D: psi = (1/2c)*sum{[max(0,mu+c*g)]^2 - mu^2}
 //   computed directly from the "pre-computed D_m" (for the diagonal terms, no re-FK)
 double NewtonSolver::alm_penalty_from_D(const Eigen::VectorXd& D_m,
                                         const Eigen::VectorXd& mu_m, double c_loc) const
@@ -401,14 +401,14 @@ double NewtonSolver::alm_penalty_from_D(const Eigen::VectorXd& D_m,
   return (1.0 / (2.0 * c_loc)) * (t_m.square() - mu_m.array().square()).sum();
 }
 
-// [MATLAB] alm_penalty_sum: same as above but re-does FK (used for the off-diagonal double perturbation g_pp)
+// alm_penalty_sum: same as above but re-does FK (used for the off-diagonal double perturbation g_pp)
 double NewtonSolver::alm_penalty_sum(const Eigen::VectorXd& Xm_local,
                                      const Eigen::VectorXd& mu_m, double c_loc) const
 {
   return alm_penalty_from_D(compute_Dm_local(Xm_local), mu_m, c_loc);
 }
 
-// [MATLAB] compute_H_smooth: smoothing-term Hessian grad^2_X f (num_X x num_X)
+// compute_H_smooth: smoothing-term Hessian grad^2_X f (num_X x num_X)
 //   diagonal:   (f+ - 2f0 + f-)/h^2          central difference
 //   off-diagonal: (f++ - f+i - f+j + f0)/h^2    forward-forward difference
 Eigen::MatrixXd NewtonSolver::compute_H_smooth(const Eigen::VectorXd& X) const
@@ -440,7 +440,7 @@ Eigen::MatrixXd NewtonSolver::compute_H_smooth(const Eigen::VectorXd& X) const
   return H;
 }
 
-// [MATLAB] compute_H_c: ALM Hessian H_XX = H_smooth + H_collision (num_X x num_X)
+// compute_H_c: ALM Hessian H_XX = H_smooth + H_collision (num_X x num_X)
 //   H_collision: block-diagonal (each block 12x12, at point m)
 //     diagonal:   (psi+ - 2psi0 + psi-)/h^2          central difference (using the cached D)
 //     off-diagonal: (psi++ - psi+i - psi+j + psi0)/h^2  forward-forward (re-FK)
@@ -486,7 +486,7 @@ Eigen::MatrixXd NewtonSolver::compute_H_c(const Eigen::VectorXd& X,
     }
   }
 
-  // symmetrization (= MATLAB triu(H) + triu(H,1)'): take the upper triangle as authoritative, eliminate floating-point asymmetry
+  // symmetrization: take the upper triangle as authoritative, eliminate floating-point asymmetry
   for (int i = 0; i < num_X_; ++i) {
     for (int j = 0; j < i; ++j) { H(i, j) = H(j, i); }
   }
@@ -512,7 +512,7 @@ Eigen::VectorXd NewtonSolver::compute_G_smooth(const Eigen::VectorXd& X) const
 // =====================================================================
 // compute_G_c: full gradient grad_X L_rho = grad f + sum t_i * grad g_i
 // =====================================================================
-// [MATLAB] t_i = max(0, mu_i + c*g_i); grad g_i = (D_plus - D_base)/h (block-diagonal)
+// t_i = max(0, mu_i + c*g_i); grad g_i = (D_plus - D_base)/h (block-diagonal)
 Eigen::VectorXd NewtonSolver::compute_G_c(const Eigen::VectorXd& X,
                                       const Eigen::MatrixXd& D_base,
                                       const std::vector<Eigen::MatrixXd>& D_plus,
@@ -559,7 +559,7 @@ double NewtonSolver::cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& X
   return c;
 }
 
-// [MATLAB] cost_function_F: f = pw*fA + (1-pw)*fB
+// cost_function_F: f = pw*fA + (1-pw)*fB
 double NewtonSolver::cost_function_F(const Eigen::VectorXd& X) const
 {
   double f, fa, fb;
@@ -597,7 +597,7 @@ double NewtonSolver::cost_L_loc(const Eigen::VectorXd& X,
 
 // =====================================================================
 // =====================================================================
-// run_alm: ALM outer + Newton inner (LDLT, alpha=1) (= MATLAB run_alm)
+// run_alm: ALM outer + Newton inner (LDLT, alpha=1)
 // =====================================================================
 SolverLog NewtonSolver::run_alm()
 {
@@ -638,7 +638,7 @@ SolverLog NewtonSolver::run_alm()
       }
 
       // (1d) Newton direction: assemble the ALM Hessian, solve d = -(H \\ G)  [LDLT]
-      //      Hessian = H_smooth + H_collision (= MATLAB Newton_v6)
+      //      Hessian = H_smooth + H_collision
       const Eigen::MatrixXd H_XX = compute_H_c(X, D_base, D_plus, D_minus, mu_loc, c_loc);
       Eigen::VectorXd d = -H_XX.ldlt().solve(G);
 

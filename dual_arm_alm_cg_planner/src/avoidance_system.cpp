@@ -1,8 +1,7 @@
 // =====================================================================
-// avoidance_system.cpp — Layer 2 outer-system implementation (= MATLAB System v3)
+// avoidance_system.cpp — Layer 2 outer-system implementation
 // =====================================================================
-//   ⚠ MATLAB 1-indexed -> C++ 0-indexed: targets/indices are 0-indexed throughout,
-//     annotated only where corresponding to a MATLAB formula
+//   targets/indices are 0-indexed throughout
 // =====================================================================
 #include "dual_arm_alm_cg_planner/avoidance_system.hpp"
 #include "dual_arm_alm_cg_planner/data_io.hpp"
@@ -19,9 +18,9 @@ namespace dual_arm_alm_cg_planner
 {
 
 // =====================================================================
-// Clamped Cubic Spline (replaces MATLAB spline's clamped mode)
+// Clamped Cubic Spline
 // =====================================================================
-// [MATLAB] spline(t, [v0, Y, v1], tq): given endpoint slopes -> clamped cubic
+// spline(t, [v0, Y, v1], tq): given endpoint slopes -> clamped cubic
 //   standard method: solve the tridiagonal system for the second derivatives M at each knot, then piecewise Hermite evaluation
 //   each dimension solved independently (Y is dim x n)
 Eigen::MatrixXd AvoidanceSystem::clamped_cubic_spline(const Eigen::VectorXd& t_knots,
@@ -95,7 +94,7 @@ Eigen::MatrixXd AvoidanceSystem::clamped_cubic_spline(const Eigen::VectorXd& t_k
 }
 
 // =====================================================================
-// constructor (= MATLAB System v3 constructor)
+// constructor: store waypoints/parameters, set up robot bases, build initial trajectory
 // =====================================================================
 AvoidanceSystem::AvoidanceSystem(const Eigen::MatrixXd& A_waypoints,
                                  const Eigen::MatrixXd& B_waypoints,
@@ -119,7 +118,7 @@ AvoidanceSystem::AvoidanceSystem(const Eigen::MatrixXd& A_waypoints,
   //   printed immediately under MoveIt (a non-terminal environment) too, not accumulated in the buffer (avoiding "sometimes not printed")
   std::cout << std::unitbuf;
 
-  // [MATLAB] base: Arm A Ty(700)Rz(180), Arm B Ty(-700)Rz(0)
+  // robot base transforms: Arm A Ty(700)Rz(180), Arm B Ty(-700)Rz(0)
   robotA_base_ = CgSolver::make_translation('y', 700) * CgSolver::make_rotation('z', 180);
   robotB_base_ = CgSolver::make_translation('y', -700) * CgSolver::make_rotation('z', 0);
 
@@ -137,25 +136,25 @@ void AvoidanceSystem::generate_initial_trajectory()
   const Eigen::MatrixXd& wA = A_waypoints_;
   const Eigen::MatrixXd& wB = B_waypoints_;
 
-  // [MATLAB] Anchors = [wA, wB] (2 x 12)
+  // Anchors = [wA, wB] (2 x 12)
   Eigen::MatrixXd Anchors(2, 12);
   Anchors.leftCols(6)  = wA;
   Anchors.rightCols(6) = wB;
 
-  // [MATLAB] dist = max(norm(diff(wA)), norm(diff(wB)))
+  // dist = max chord length between the two waypoints of each arm
   double distA = (wA.row(1) - wA.row(0)).norm();
   double distB = (wB.row(1) - wB.row(0)).norm();
   double dist  = std::max(distA, distB);
   if (dist < 1e-4) dist = 1e-6;
 
-  // [MATLAB] n_steps = max(1, ceil(dist/STEP_MAX_DEG)); T = n_steps+1
+  // n_steps = max(1, ceil(dist/STEP_MAX_DEG)); T = n_steps+1
   const int n_steps = std::max(1, static_cast<int>(std::ceil(dist / STEP_MAX_DEG_)));
   const int T_total = n_steps + 1;
 
   Eigen::VectorXd t_knots(2); t_knots << 0.0, dist;
   Eigen::VectorXd t_query = Eigen::VectorXd::LinSpaced(T_total, 0.0, dist);
 
-  // [MATLAB] clamped: v_start=v_end=0; Y = Anchors' (12 x 2)
+  // clamped: v_start=v_end=0; Y = Anchors transposed (12 x 2)
   Eigen::VectorXd v0 = Eigen::VectorXd::Zero(12);
   Eigen::VectorXd v1 = Eigen::VectorXd::Zero(12);
   Eigen::MatrixXd Y = Anchors.transpose();   // 12 x 2
@@ -179,8 +178,7 @@ void AvoidanceSystem::check_collision(const Trajectory& traj,
 {
   const int T = static_cast<int>(traj.time.size());
 
-  // [MATLAB] first compute step 1 to obtain the D length (using calc_df_bubble_ver1 mode=3, full constraints)
-  //   in C++, run once through CgSolver's FK+calc_df+mask to obtain num_D
+  // compute step 0 first to obtain the D length via CgSolver's FK+calc_df+mask
   auto compute_step_D = [&](int t) -> Eigen::VectorXd {
     double Ja[6], Jb[6];
     for (int j = 0; j < 6; ++j) { Ja[j] = traj.posA(t, j); Jb[j] = traj.posB(t, j); }
@@ -219,22 +217,22 @@ void AvoidanceSystem::check_collision(const Trajectory& traj,
 // =====================================================================
 CollisionIndices AvoidanceSystem::find_collision_targets(const Eigen::VectorXd& path_D) const
 {
-  const double threshold = danger_threshold_;   // [MATLAB] uses 0.4 (not +tol)
+  const double threshold = danger_threshold_;   // base threshold only, no tolerance added
   const int n = static_cast<int>(path_D.size());
 
-  // [MATLAB] all_danger_indices = find(path_D >= threshold) (0-indexed)
+  // all_danger_indices: 0-indexed positions where path_D >= threshold
   std::vector<int> danger;
   for (int i = 0; i < n; ++i)
     if (path_D(i) >= threshold) danger.push_back(i);
 
   std::vector<int> index;   // index set of the most dangerous segment
   if (danger.empty()) {
-    // [MATLAB] all below threshold -> take the single max point
+    // all below threshold -> take the single max point
     int mx = 0;
     for (int i = 1; i < n; ++i) if (path_D(i) > path_D(mx)) mx = i;
     index.push_back(mx);
   } else {
-    // [MATLAB] split into contiguous segments via diff>1, pick the most dangerous segment
+    // split into contiguous segments via diff>1, pick the most dangerous segment
     std::vector<int> seg_starts, seg_ends;
     seg_starts.push_back(0);
     for (size_t k = 0; k + 1 < danger.size(); ++k)
@@ -260,14 +258,14 @@ CollisionIndices AvoidanceSystem::find_collision_targets(const Eigen::VectorXd& 
   int Max_idx = index[0];
   for (int idx : index) if (path_D(idx) > Max_val) { Max_val = path_D(idx); Max_idx = idx; }
 
-  // [MATLAB] q1: search minidx..Max_idx-1 for D close to (threshold+Max_val)/2
+  // q1: search minidx..Max_idx-1 for D closest to (threshold+Max_val)/2
   double mean_err = std::numeric_limits<double>::infinity();
   int q1_idx = (minidx + Max_idx) / 2;
   for (int it = minidx; it <= Max_idx - 1; ++it) {
     double val = std::abs(path_D(it) - (threshold + Max_val) / 2.0);
     if (val < mean_err) { q1_idx = it; mean_err = val; }
   }
-  // [MATLAB] q3: maxidx..Max_idx+1 scanned in reverse
+  // q3: maxidx..Max_idx+1 scanned in reverse
   mean_err = std::numeric_limits<double>::infinity();
   int q3_idx = (Max_idx + maxidx) / 2;
   for (int it = maxidx; it >= Max_idx + 1; --it) {
@@ -275,17 +273,16 @@ CollisionIndices AvoidanceSystem::find_collision_targets(const Eigen::VectorXd& 
     if (val < mean_err) { q3_idx = it; mean_err = val; }
   }
 
-  // [MATLAB] boundary protection minidx=max(_,2)/maxidx=min(_,len-1) (1-indexed)
-  //   0-indexed: minidx>=1, maxidx<=n-2
+  // boundary protection: clamp minidx>=1, maxidx<=n-2
   minidx = std::max(minidx, 1);
   maxidx = std::min(maxidx, n - 2);
 
-  // [MATLAB] fix_gap = max(round(fix_tol*(maxidx-minidx)), 1)
+  // fix_gap = max(round(fix_tol*(maxidx-minidx)), 1)
   int fix_gap = std::max(static_cast<int>(std::lround(fix_tolerance_ * (maxidx - minidx))), 1);
   int Head = minidx - fix_gap;
   int Tail = maxidx + fix_gap;
-  Head = std::max(Head, 0);       // [MATLAB] max(Head,1) -> 0-indexed max(.,0)
-  Tail = std::min(Tail, n - 1);   // [MATLAB] min(Tail,len) -> 0-indexed min(.,n-1)
+  Head = std::max(Head, 0);       // clamp to 0-indexed lower bound
+  Tail = std::min(Tail, n - 1);   // clamp to 0-indexed upper bound
 
   q1_idx = std::max(minidx, std::min(q1_idx, Max_idx));
   q3_idx = std::max(Max_idx, std::min(q3_idx, maxidx));
@@ -310,7 +307,7 @@ void AvoidanceSystem::run_solver_global(const Trajectory& traj, const std::vecto
 {
   auto t1 = std::chrono::steady_clock::now();
 
-  // [MATLAB] X = trajectory.pos(targets, :) (5 x 12)
+  // X = trajectory.pos(targets, :) (5 x 12)
   Eigen::MatrixXd X(static_cast<int>(targets.size()), 12);
   for (size_t i = 0; i < targets.size(); ++i) X.row(static_cast<int>(i)) = traj.pos.row(targets[i]);
 
@@ -321,7 +318,7 @@ void AvoidanceSystem::run_solver_global(const Trajectory& traj, const std::vecto
   solver.set_iter_limits(alm_k_outer_, alm_k_inner_);   // [NEW] yaml → iteration-limit injection
   solver_log = solver.run_alm();
 
-  // [MATLAB] P = size(X,1)-2; Xm = reshape(V_final(1:P*12),12,[])' (column-major)
+  // P = number of targets - 2; unpack V_final into Xa_opt/Xb_opt per point (12 values each)
   const int P = static_cast<int>(targets.size()) - 2;
   const Eigen::VectorXd& V = solver.get_X_final();
   Xa_opt.resize(P, 6);
@@ -351,7 +348,7 @@ Trajectory AvoidanceSystem::regenerate_trajectory_global(const Trajectory& old_t
   const int total_len = static_cast<int>(pos_all.rows());
   const int P = static_cast<int>(Xa_opt.rows());
 
-  // [MATLAB] Patch_Anchors = [Head point; optimized points (P); Tail point] ((P+2) x 12)
+  // Patch_Anchors = [Head point; optimized points (P); Tail point] ((P+2) x 12)
   Eigen::MatrixXd Patch(P + 2, 12);
   Patch.row(0) = pos_all.row(targets.front());
   for (int m = 0; m < P; ++m) {
@@ -360,8 +357,8 @@ Trajectory AvoidanceSystem::regenerate_trajectory_global(const Trajectory& old_t
   }
   Patch.row(P + 1) = pos_all.row(targets.back());
 
-  // [MATLAB] segment distance + valid_mask>1e-4 to filter out coincident points
-  //   valid_indices = [true; valid_mask], sum(valid_indices) = number of retained anchors
+  // segment distance + valid_mask>1e-4 to filter out coincident points
+  //   valid_rows.size() = number of retained anchors
   std::vector<int> valid_rows; valid_rows.push_back(0);
   std::vector<double> seg_dists;
   for (int i = 1; i < P + 2; ++i) {
@@ -369,20 +366,19 @@ Trajectory AvoidanceSystem::regenerate_trajectory_global(const Trajectory& old_t
     if (d > 1e-4) { valid_rows.push_back(i); seg_dists.push_back(d); }
   }
 
-  // [MATLAB] if sum(valid_indices) < 2: degenerate (anchors nearly all coincident)
-  //   Clean_Anchors = [Patch(1,:); Patch(end,:)] (keep only head and tail)
-  //   Clean_dist_seg = 1e-6;  t_knots = [0; 1e-6]
+  // degenerate case (fewer than 2 valid anchors, nearly all coincident):
+  //   keep only head and tail rows, use a tiny fixed segment distance
   Eigen::MatrixXd Clean;
   Eigen::VectorXd t_knots;
   if (static_cast<int>(valid_rows.size()) < 2) {
     Clean.resize(2, 12);
-    Clean.row(0) = Patch.row(0);          // head (Patch_Anchors(1,:))
-    Clean.row(1) = Patch.row(P + 1);      // tail (Patch_Anchors(end,:))
-    seg_dists.assign(1, 1e-6);            // Clean_dist_seg = 1e-6
+    Clean.row(0) = Patch.row(0);          // head anchor
+    Clean.row(1) = Patch.row(P + 1);      // tail anchor
+    seg_dists.assign(1, 1e-6);            // fixed tiny segment distance
     t_knots.resize(2);
     t_knots << 0.0, 1e-6;                 // [0; 1e-6]
   } else {
-    // [MATLAB] else: Clean = Patch(valid_indices,:); t_knots = [0; cumsum(dist_seg)]
+    // otherwise: keep only the valid anchors; t_knots = [0; cumsum(dist_seg)]
     Clean.resize(static_cast<int>(valid_rows.size()), 12);
     for (size_t i = 0; i < valid_rows.size(); ++i)
       Clean.row(static_cast<int>(i)) = Patch.row(valid_rows[i]);
@@ -391,7 +387,7 @@ Trajectory AvoidanceSystem::regenerate_trajectory_global(const Trajectory& old_t
     for (size_t i = 0; i < seg_dists.size(); ++i) t_knots(i+1) = t_knots(i) + seg_dists[i];
   }
 
-  // [MATLAB] n_steps_all = ceil(seg/STEP_MAX); drop-tail concatenation
+  // n_steps_all = ceil(seg/STEP_MAX); drop-tail concatenation between segments
   std::vector<int> n_steps_all;
   for (double d : seg_dists) n_steps_all.push_back(std::max(1, static_cast<int>(std::ceil(d / STEP_MAX_DEG_))));
   int T_patch = 1; for (int s : n_steps_all) T_patch += s;
@@ -409,7 +405,7 @@ Trajectory AvoidanceSystem::regenerate_trajectory_global(const Trajectory& old_t
     }
   }
 
-  // [MATLAB] C1 boundary-slope alignment (seam slope, prevents overshoot)
+  // C1 boundary-slope alignment (seam slope, prevents overshoot)
   Eigen::VectorXd v_start = Eigen::VectorXd::Zero(12);
   Eigen::VectorXd v_end   = Eigen::VectorXd::Zero(12);
   if (targets.front() > 0)
@@ -420,31 +416,26 @@ Trajectory AvoidanceSystem::regenerate_trajectory_global(const Trajectory& old_t
   Eigen::MatrixXd Y = Clean.transpose();   // 12 x n_knots
   Eigen::MatrixXd Patch_Pos = clamped_cubic_spline(t_knots, Y, v_start, v_end, t_query);  // T_patch x 12
 
-  // ===== Concatenation (fully aligned with MATLAB regenerate_trajectory_global) =====
-  // [MATLAB] patch_core = Patch_Pos(2:end-1, :)  -> drop head and tail, use the "actual row count"
-  //   num_patch = size(patch_core, 1) = Patch_Pos.rows() - 2  (★ key: use the actual row count, not T_patch)
+  // ===== Concatenation: pre-patch prefix + patched middle + post-patch suffix =====
+  // patch_core = Patch_Pos with head and tail rows dropped; use the actual row count
+  //   num_patch = Patch_Pos.rows() - 2  (★ key: use the actual row count, not T_patch)
   const int patch_rows = static_cast<int>(Patch_Pos.rows());
   const int num_patch  = patch_rows - 2;
-  // [MATLAB] num_head = targets(1)  (1-indexed position value)
-  //   C++ targets[0] is 0-indexed, so MATLAB num_head = targets[0] + 1
+  // num_head = number of untouched rows before the patch (0-indexed targets.front() -> count = index+1)
   const int num_head = targets.front() + 1;
-  // [MATLAB] num_tail = total_len - targets(end) + 1
-  //   C++: total_len - (targets.back()+1) + 1 = total_len - targets.back()
+  // num_tail = number of untouched rows after the patch (total_len - targets.back())
   const int num_tail = total_len - targets.back();
-  // [MATLAB] T_new = num_head + num_patch + num_tail  (no extra +1)
   const int T_new = num_head + num_patch + num_tail;
 
-  // [MATLAB] whole-segment assignment (Eigen block operations, corresponding to MATLAB final_pos(a:b,:)=...)
-  //   segment 3 already covers the MATLAB degenerate branch (sum(valid)<2 -> 2-point spline), so here num_patch>=0
+  // whole-segment assignment via Eigen block operations
+  //   the degenerate branch above (fewer than 2 valid anchors -> 2-point spline) still leaves num_patch>=0
   Eigen::MatrixXd final_pos(T_new, 12);
-  // final_pos(1:num_head, :) = pos_all(1:num_head, :)
-  //   MATLAB's first num_head rows = C++ pos_all[0 .. num_head-1]
+  // final_pos[0 .. num_head-1] = pos_all[0 .. num_head-1] (rows before the patched segment)
   final_pos.topRows(num_head) = pos_all.topRows(num_head);
-  // final_pos(num_head+1 : num_head+num_patch, :) = patch_core (Patch_Pos with head and tail dropped)
+  // middle rows = patch_core (Patch_Pos with head and tail dropped)
   if (num_patch > 0)
     final_pos.middleRows(num_head, num_patch) = Patch_Pos.middleRows(1, num_patch);
-  // final_pos(num_head+num_patch+1 : end, :) = pos_all(targets(end) : end, :)
-  //   MATLAB targets(end) (1-indexed) = C++ targets.back() (0-indexed) as the start, num_tail rows in total
+  // final rows = pos_all[targets.back() .. end] (num_tail rows, unchanged tail of the original trajectory)
   final_pos.bottomRows(num_tail) = pos_all.bottomRows(num_tail);
 
   Trajectory nt;
@@ -453,18 +444,17 @@ Trajectory AvoidanceSystem::regenerate_trajectory_global(const Trajectory& old_t
   nt.posA = final_pos.leftCols(6);
   nt.posB = final_pos.rightCols(6);
 
-  // [MATLAB] targets_out: the 5 anchors' indices in the new trajectory
-  //   if all(valid_indices) && length(n_steps_all)==4
+  // targets_out: the 5 anchors' indices in the new trajectory
+  //   only computed exactly when all anchors were valid and there are exactly 4 segments
   targets_out.clear();
   if (static_cast<int>(valid_rows.size()) == P + 2 && n_steps_all.size() == 4) {
-    // [MATLAB] cum_steps = cumsum(n_steps_all);
+    // cumulative step counts locate each interior anchor within the patched segment
     //   targets_out = [num_head, num_head+cum(1), num_head+cum(2), num_head+cum(3), num_head+num_patch+1]
-    //   ⚠ MATLAB num_head is 1-indexed -> subtract 1 to convert to 0-indexed
     int c1 = n_steps_all[0], c2 = c1 + n_steps_all[1], c3 = c2 + n_steps_all[2];
     const int nh = num_head - 1;   // convert back to the 0-indexed base
     targets_out = {nh, nh + c1, nh + c2, nh + c3, nh + num_patch + 1};
   } else {
-    // [MATLAB] degenerate: round(linspace(num_head, num_head+num_patch+1, 5))
+    // degenerate case: approximate with evenly spaced indices across the patch
     std::cout << "  [Regen] anchors coincident, targets_out uses an approximation\n";
     const int nh = num_head - 1;
     Eigen::VectorXd lin = Eigen::VectorXd::LinSpaced(5, nh, nh + num_patch + 1);
@@ -483,7 +473,7 @@ void AvoidanceSystem::run_optimization()
 {
   check_collision(trajectory_ori_, path_D_ori_, is_collision_, &path_D_all_ori_);
 
-  // [MATLAB] start/goal pre-check (0.4 threshold + warning + return)
+  // start/goal pre-check (danger threshold + warning + early return)
   if (path_D_ori_(0) >= danger_threshold_ + collision_tolerance_) {
     std::cout << "  [WARN] start pose is close to collision (D=" << path_D_ori_(0) << " >= "
               << danger_threshold_ + collision_tolerance_<< "), cannot plan\n";

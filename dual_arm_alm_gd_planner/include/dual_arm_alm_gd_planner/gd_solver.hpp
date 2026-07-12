@@ -1,12 +1,11 @@
 // =====================================================================
-// gd_solver.hpp — Layer 1: inner GD optimizer (= MATLAB Dual_Arm_Inequality_ALM_GD_v6)
+// gd_solver.hpp — Layer 1: inner GD optimizer
 // =====================================================================
 //   ALM (PHR) outer + GD (Fletcher-Reeves conjugate gradient) inner + 1D Newton line search
 //   ⚠ GD version has "no Hessian, no LDLT, no direction memory": direction d = -G, step length from line search
-//   the mathematical model is identical to CG_v7 / Newton_v6 (only the inner solution method is GD steepest descent)
+//   the mathematical model matches other solver variants that share this codebase (only the inner solution method is GD steepest descent)
 //
-//   [MATLAB] corresponding class: Dual_Arm_Inequality_ALM_GD_v6
-//   coordinates/units: all in degrees (consistent with MATLAB); distances in mm
+//   coordinates/units: all in degrees; distances in mm
 //   FK 4x4 uses Eigen::Matrix4d (fixed size); matrices involving num_D use dynamic size
 // =====================================================================
 #ifndef DUAL_ARM_ALM_GD_PLANNER_GD_SOLVER_HPP
@@ -19,14 +18,14 @@
 namespace dual_arm_alm_gd_planner
 {
 
-// [MATLAB] bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
+// bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
 struct BubbleDef {
   int    link_id;   // which link it is attached to (arm_frame, 0-indexed)
   double radius;
   double cx, cy, cz;
 };
 
-// [MATLAB] the log structure returned by run_alm (corresponds to the 33-column log; the verbose section is optional)
+// the log structure returned by run_alm (33 columns; the verbose section is optional)
 //   avoidance_system's export functions read these fields
 struct SolverLog {
   // --- scalar results ---
@@ -67,7 +66,7 @@ struct SolverLog {
 class GdSolver
 {
 public:
-  // [MATLAB] constructor Dual_Arm_Inequality_ALM_GD_v6(X, robotA_base, robot_base, DANGER_THRESHOLD, path_weight)
+  // constructor: takes X, robotA_base, robotB_base, danger_threshold, path_weight
   //   X: (P+2) x 12 matrix (head + P interior points + tail), each row [A1..6, B1..6] (degrees)
   GdSolver(const Eigen::MatrixXd& X,
            const Eigen::Matrix4d& robotA_base,
@@ -80,7 +79,7 @@ public:
            double smooth_w_T        = 1.0,
            double smooth_w_neighbor = 1.0);
 
-  // [MATLAB] run_alm: returns log; X_final is obtained via get_X_final()
+  // run_alm: returns log; X_final is obtained via get_X_final()
   SolverLog run_alm();
 
   // getters (the outer layer retrieves results only through getters)
@@ -107,27 +106,27 @@ public:
     beta_c_ = beta_c; gamma_v_ = gamma_v;
   }
 
-  // ===== Static shared utilities (= MATLAB static methods) =====
+  // ===== Static shared utilities =====
 
-  // [MATLAB] transmatrix(1, dir, deg): rotation matrix (angle deg)
+  // make_rotation: rotation matrix about axis by angle_deg
   static Eigen::Matrix4d make_rotation(char axis, double angle_deg);
-  // [MATLAB] transmatrix(2, dir, val): translation matrix (mm)
+  // make_translation: translation matrix along axis by dist_mm
   static Eigen::Matrix4d make_translation(char axis, double dist_mm);
 
-  // [MATLAB] calc_df(R1,R2,P1,P2): sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 * d^2)
+  // calc_df: sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 * d^2)
   //   P1:(n1x3), P2:(n2x3), R1:(n1), R2:(n2) -> sj:(n1 x n2)
   static Eigen::MatrixXd calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                  const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2);
 
-  // [MATLAB] get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level)
+  // get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level)
   static Eigen::Array<bool, 16, 18> get_collision_masks();
 
-  // [MATLAB] robot_arm_bubble_RA610_1476: RA610 FK -> 16 spheres (4 base + 12 arm)
+  // robot_arm_bubble_RA610: RA610 FK -> 16 spheres (4 base + 12 arm)
   //   returns bubble:(16x3) sphere centers, r:(16) radii, T_ee:4x4 end-effector transform
   static void robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
-  // [MATLAB] robot_arm_bubble_RA605_710: RA605 FK -> 18 spheres (8 base + 10 arm)
+  // robot_arm_bubble_RA605: RA605 FK -> 18 spheres (8 base + 10 arm)
   static void robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
@@ -179,7 +178,7 @@ private:
   int    K_inner_first_       = 200;
 
 
-  // ===== Inner numerical methods (= MATLAB instance methods) =====
+  // ===== Inner numerical methods =====
   Eigen::VectorXd compute_Dm(const Eigen::VectorXd& X, int m) const;          // D at point m (num_D)
   Eigen::VectorXd compute_Dx_all(const Eigen::VectorXd& X) const;             // D over all points (num_C)
   Eigen::VectorXd compute_G_smooth(const Eigen::VectorXd& X) const;           // smoothing gradient (num_X)

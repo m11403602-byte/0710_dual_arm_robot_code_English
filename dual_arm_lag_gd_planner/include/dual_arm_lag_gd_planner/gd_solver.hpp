@@ -1,6 +1,5 @@
 // =====================================================================
 // gd_solver.hpp — Layer 1: pure Lagrangian inner optimizer (gradient descent)
-//   = MATLAB Dual_Arm_Lagrangian_Gradient_v2
 // =====================================================================
 //   pure Lagrangian (S²-slack) + gradient descent (Steepest Descent) + 1D Newton line search
 //   ⚠ a "different mathematical object" from the ALM lineage:
@@ -18,8 +17,7 @@
 //     the pure Lagrangian is linear in λ → a saddle point, so ‖G‖ does not converge to 0;
 //     λ drifts toward feasibility rather than KKT stationarity. Hence feasibility + stability are used as the criterion.
 //
-//   [MATLAB] corresponding class: Dual_Arm_Lagrangian_Gradient_v2
-//   coordinates/units: all in degrees (consistent with MATLAB); distances in mm
+//   coordinates/units: all in degrees; distances in mm
 //   the geometry (FK/spheres/calc_df/mask) is bit-identical to the ALM/Newton lineage (the same robot model)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_GD_PLANNER_GD_SOLVER_HPP
@@ -32,7 +30,7 @@
 namespace dual_arm_lag_gd_planner
 {
 
-// [MATLAB] bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
+// bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
 struct BubbleDef {
   int    link_id;   // which link it is attached to (arm_frame, 0-indexed); base spheres use -1
   double radius;
@@ -99,20 +97,20 @@ struct SolverLog {
 class GdSolver
 {
 public:
-  // [MATLAB] Dual_Arm_Lagrangian_Gradient_v2(X, robotA_base, robotB_base, DANGER_THRESHOLD, path_weight)
+  // constructor: build dimensions, mask indices, head/tail/interior points, initial state
   //   X: (P+2) x 12 matrix (head + P interior points + tail), each row [A1..6, B1..6] (degrees)
   GdSolver(const Eigen::MatrixXd& X,
            const Eigen::Matrix4d& robotA_base,
            const Eigen::Matrix4d& robotB_base,
            double danger_threshold,
            double path_weight,
-           // smoothing weights (MATLAB default all 1)
+           // smoothing weights (default all 1)
            double smooth_w          = 0.3,
            double smooth_w_H        = 1.0,
            double smooth_w_T        = 1.0,
            double smooth_w_neighbor = 1.0);
 
-  // [MATLAB] run_newton (renamed run_lag in C++): returns log; X_final is obtained via get_X_final()
+  // run_lag: main optimization loop; returns log, X_final is obtained via get_X_final()
   SolverLog run_lag();
 
   // ===== Getter =====
@@ -144,25 +142,25 @@ public:
     if (max_iter > 0) max_solver_iter_ = max_iter;
   }
 
-  // ===== Static shared utilities (= MATLAB static methods; bit-identical to the ALM/Newton lineage) =====
+  // ===== Static shared utilities (bit-identical to the ALM/Newton lineage) =====
 
-  // [MATLAB] transmatrix(1, dir, deg): rotation matrix (angle deg)
+  // make_rotation: rotation matrix about axis by angle_deg
   static Eigen::Matrix4d make_rotation(char axis, double angle_deg);
-  // [MATLAB] transmatrix(2, dir, val): translation matrix (mm)
+  // make_translation: translation matrix along axis by dist_mm
   static Eigen::Matrix4d make_translation(char axis, double dist_mm);
 
-  // [MATLAB] calc_df(R1,R2,P1,P2): sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 · d^2)
+  // calc_df(R1,R2,P1,P2): sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 · d^2)
   static Eigen::MatrixXd calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                  const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2);
 
-  // [MATLAB] get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level, K_AB=180)
+  // get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level, K_AB=180)
   static Eigen::Array<bool, 16, 18> get_collision_masks();
 
-  // [MATLAB] robot_arm_bubble_RA610_1476: RA610 FK → 16 spheres (4 base + 12 arm)
+  // robot_arm_bubble_RA610: RA610 FK → 16 spheres (4 base + 12 arm)
   static void robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
-  // [MATLAB] robot_arm_bubble_RA605_710: RA605 FK → 18 spheres (8 base + 10 arm)
+  // robot_arm_bubble_RA605: RA605 FK → 18 spheres (8 base + 10 arm)
   static void robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
@@ -188,9 +186,9 @@ private:
 
   double danger_threshold_ = 0.35;
   double path_weight_      = 0.5;
-  double delta_            = 0.01;   // finite-difference perturbation h (shared by FK and cost FD, = MATLAB delta)
+  double delta_            = 0.01;   // finite-difference perturbation h (shared by FK and cost FD)
 
-  // smoothing cost weights (= MATLAB smooth_weights, default all 1)
+  // smoothing cost weights (default all 1)
   double smooth_w_          = 0.3;
   double smooth_w_H_        = 1.0;
   double smooth_w_T_        = 1.0;
@@ -201,7 +199,7 @@ private:
   double lam0_             = 30.0;   // λ_0  ⚠ the comment says 10, the actual code = 30
   double s0_               = 1.0;    // S_0  (S²=1)
   double TOL_PHYS_MARGIN_  = 0.01;   // max_D ≤ θ + margin
-  double TOL_STABLE_       = 0.01;   // |Δmax_D| ≤ TOL_STABLE (original MATLAB value 0.005, adjusted to 0.01)
+  double TOL_STABLE_       = 0.01;   // |Δmax_D| ≤ TOL_STABLE
   int    max_solver_iter_  = 500;
 
 
@@ -217,7 +215,7 @@ private:
   inline int idx_Sm (int m) const { return num_X_ + num_C_ + m * num_D_; } // start of point m's S (global V)
   inline int idx_lam_local(int m) const { return m * num_D_; }      // start of point m's λ (within the λ region)
 
-  // ===== Inner numerical methods (= MATLAB instance methods) =====
+  // ===== Inner numerical methods =====
   Eigen::VectorXd compute_Dm(const Eigen::VectorXd& X, int m) const;     // D at point m (num_D)
   Eigen::VectorXd compute_Dx_all(const Eigen::VectorXd& X) const;        // D over all points (num_C)
   void compute_D_cache(const Eigen::VectorXd& V,
@@ -233,7 +231,7 @@ private:
                                double& f, double& fa, double& fb) const;  // [NEW] split out fa/fb to pass outward
   double cost_Xm(const Eigen::MatrixXd& Xa, const Eigen::MatrixXd& Xori,
                  const Eigen::RowVectorXd& XH, const Eigen::RowVectorXd& XT) const;
-  // [MATLAB] line_search_newton_1d: returns α, and passes out the inner step count / fallback flag via reference
+  // line_search_newton_1d: returns α, and passes out the inner step count / fallback flag via reference
   double line_search_newton_1d(const Eigen::VectorXd& V, const Eigen::VectorXd& d,
                                int& ls_inner, bool& ls_fallback) const;
 

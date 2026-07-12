@@ -1,7 +1,7 @@
 // =====================================================================
 // data_io.hpp — CSV writing utility (pure std, zero dependencies)
 // =====================================================================
-//   multiple sheets map to multiple files (MATLAB writecell 'Sheet' -> separate .csv files)
+//   multiple sheets map to multiple files (one 'Sheet' -> one separate .csv file)
 //   write only, no read (waypoints are provided directly by the caller)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_GD_PLANNER_DATA_IO_HPP

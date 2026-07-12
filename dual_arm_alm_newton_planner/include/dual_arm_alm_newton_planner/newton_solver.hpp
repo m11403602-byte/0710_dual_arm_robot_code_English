@@ -1,12 +1,11 @@
 // =====================================================================
-// newton_solver.hpp — Layer 1: inner Newton optimizer (= MATLAB Dual_Arm_Inequality_ALM_Newton_v6)
+// newton_solver.hpp — Layer 1: inner Newton optimizer (ALM outer + Newton inner)
 // =====================================================================
 //   ALM (PHR) outer + Newton inner: d = -(H\\G) solved via LDLT, alpha=1 pure Newton step
-//   ⚠ Newton version has "a Hessian and LDLT": direction d = -(H\\G), step length alpha=1 pure Newton step (no line search)
-//   the mathematical model is identical to CG_v7 / GD_v6 (only the inner solution method is Newton)
+//   direction d = -(H\\G), step length alpha=1 pure Newton step (no line search)
+//   the mathematical model is identical to the CG / gradient-descent inner solvers (only the inner solution method is Newton)
 //
-//   [MATLAB] corresponding class: Dual_Arm_Inequality_ALM_Newton_v6
-//   coordinates/units: all in degrees (consistent with MATLAB); distances in mm
+//   coordinates/units: all in degrees; distances in mm
 //   FK 4x4 uses Eigen::Matrix4d (fixed size); matrices involving num_D use dynamic size
 // =====================================================================
 #ifndef DUAL_ARM_ALM_NEWTON_PLANNER_NEWTON_SOLVER_HPP
@@ -19,14 +18,14 @@
 namespace dual_arm_alm_newton_planner
 {
 
-// [MATLAB] bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
+// bounding-sphere definition: {link_id (0-indexed), radius, local coordinates x/y/z}
 struct BubbleDef {
   int    link_id;   // which link it is attached to (arm_frame, 0-indexed)
   double radius;
   double cx, cy, cz;
 };
 
-// [MATLAB] the log structure returned by run_alm (corresponds to the 33-column log; the verbose section is optional)
+// the log structure returned by run_alm (33-column log; the verbose section is optional)
 //   avoidance_system's export functions read these fields
 struct SolverLog {
   // --- scalar results ---
@@ -67,7 +66,7 @@ struct SolverLog {
 class NewtonSolver
 {
 public:
-  // [MATLAB] constructor Dual_Arm_Inequality_ALM_Newton_v6(X, robotA_base, robot_base, DANGER_THRESHOLD, path_weight)
+  // constructor: build dimensions, mask indices, head/tail/interior points, initial state
   //   X: (P+2) x 12 matrix (head + P interior points + tail), each row [A1..6, B1..6] (degrees)
   NewtonSolver(const Eigen::MatrixXd& X,
            const Eigen::Matrix4d& robotA_base,
@@ -80,7 +79,7 @@ public:
            double smooth_w_T        = 1.0,
            double smooth_w_neighbor = 1.0);
 
-  // [MATLAB] run_alm: returns log; X_final is obtained via get_X_final()
+  // run_alm: returns log; X_final is obtained via get_X_final()
   SolverLog run_alm();
 
   // getters (the outer layer retrieves results only through getters)
@@ -107,27 +106,27 @@ public:
     beta_c_ = beta_c; gamma_v_ = gamma_v;
   }
 
-  // ===== Static shared utilities (= MATLAB static methods) =====
+  // ===== Static shared utilities =====
 
-  // [MATLAB] transmatrix(1, dir, deg): rotation matrix (angle deg)
+  // make_rotation: rotation matrix about axis by angle_deg
   static Eigen::Matrix4d make_rotation(char axis, double angle_deg);
-  // [MATLAB] transmatrix(2, dir, val): translation matrix (mm)
+  // make_translation: translation matrix along axis by dist_mm
   static Eigen::Matrix4d make_translation(char axis, double dist_mm);
 
-  // [MATLAB] calc_df(R1,R2,P1,P2): sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 * d^2)
+  // calc_df: sphere-pair danger factor sj = exp(ln0.5/(Ri+Rj)^2 * d^2)
   //   P1:(n1x3), P2:(n2x3), R1:(n1), R2:(n2) -> sj:(n1 x n2)
   static Eigen::MatrixXd calc_df(const Eigen::VectorXd& R1, const Eigen::VectorXd& R2,
                                  const Eigen::MatrixXd& P1, const Eigen::MatrixXd& P2);
 
-  // [MATLAB] get_collision_masks(): 16x18 cross-arm mask (link-level cAB expanded to sphere level)
+  // get_collision_masks: 16x18 cross-arm mask (link-level cAB expanded to sphere level)
   static Eigen::Array<bool, 16, 18> get_collision_masks();
 
-  // [MATLAB] robot_arm_bubble_RA610_1476: RA610 FK -> 16 spheres (4 base + 12 arm)
+  // robot_arm_bubble_RA610: RA610 FK -> 16 spheres (4 base + 12 arm)
   //   returns bubble:(16x3) sphere centers, r:(16) radii, T_ee:4x4 end-effector transform
   static void robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
-  // [MATLAB] robot_arm_bubble_RA605_710: RA605 FK -> 18 spheres (8 base + 10 arm)
+  // robot_arm_bubble_RA605: RA605 FK -> 18 spheres (8 base + 10 arm)
   static void robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const double J[6],
                                      Eigen::MatrixXd& bubble, Eigen::VectorXd& r,
                                      Eigen::Matrix4d& T_ee);
@@ -162,7 +161,7 @@ private:
   std::vector<int> lin_idx_AB_;  // length = K_AB
   int K_AB_ = 0;
 
-  // ===== ALM parameters (= Newton_v6 defaults, same as CG_v7) =====
+  // ===== ALM parameters (Newton-solver defaults, shared with the other inner solvers) =====
   Eigen::VectorXd mu_;          // (num_C) multipliers, initially all 10
   double c_                   = 5.0;
   double c_max_               = 2000.0; // unified across the three solvers (= yaml); Newton@2000 has been validated stable on hardware
@@ -179,7 +178,7 @@ private:
   int    K_inner_first_       = 200;
 
 
-  // ===== Inner numerical methods (= MATLAB instance methods) =====
+  // ===== Inner numerical methods =====
   Eigen::VectorXd compute_Dm(const Eigen::VectorXd& X, int m) const;          // D at point m (num_D)
   Eigen::VectorXd compute_Dx_all(const Eigen::VectorXd& X) const;             // D over all points (num_C)
   Eigen::VectorXd compute_G_smooth(const Eigen::VectorXd& X) const;           // smoothing gradient (num_X)
@@ -195,16 +194,16 @@ private:
                  const Eigen::RowVectorXd& XH, const Eigen::RowVectorXd& XT) const;
   double cost_L_loc(const Eigen::VectorXd& X, const Eigen::VectorXd& mu_loc, double c_loc) const;
 
-  // ===== Newton-specific (= MATLAB Newton_v6 added methods) =====
-  // [MATLAB] compute_Dm_local: compute D_m from a "single-point 12-dim local joint vector" (used for the Hessian off-diagonal double perturbation re-FK)
+  // ===== Newton-specific =====
+  // compute_Dm_local: compute D_m from a single-point 12-dim local joint vector (used for the Hessian off-diagonal double perturbation re-FK)
   Eigen::VectorXd compute_Dm_local(const Eigen::VectorXd& Xm_local) const;
-  // [MATLAB] alm_penalty_from_D: penalty scalar psi = (1/2c)*sum{[max(0,mu+c*g)]^2 - mu^2} (using the pre-computed D_m)
+  // alm_penalty_from_D: penalty scalar psi = (1/2c)*sum{[max(0,mu+c*g)]^2 - mu^2} (using the pre-computed D_m)
   double alm_penalty_from_D(const Eigen::VectorXd& D_m, const Eigen::VectorXd& mu_m, double c_loc) const;
-  // [MATLAB] alm_penalty_sum: same as above but re-does FK (used for the off-diagonal double perturbation g_pp)
+  // alm_penalty_sum: same as above but re-does FK (used for the off-diagonal double perturbation g_pp)
   double alm_penalty_sum(const Eigen::VectorXd& Xm_local, const Eigen::VectorXd& mu_m, double c_loc) const;
-  // [MATLAB] compute_H_smooth: smoothing-term Hessian (diagonal via central differences, off-diagonal via forward-forward)
+  // compute_H_smooth: smoothing-term Hessian (diagonal via central differences, off-diagonal via forward-forward)
   Eigen::MatrixXd compute_H_smooth(const Eigen::VectorXd& X) const;
-  // [MATLAB] compute_H_c: ALM Hessian = H_smooth + H_collision (block-diagonal 12x12)
+  // compute_H_c: ALM Hessian = H_smooth + H_collision (block-diagonal 12x12)
   Eigen::MatrixXd compute_H_c(const Eigen::VectorXd& X,
                               const Eigen::MatrixXd& D_base,
                               const std::vector<Eigen::MatrixXd>& D_plus,

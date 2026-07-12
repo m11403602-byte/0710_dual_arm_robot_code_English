@@ -1,11 +1,10 @@
 // =====================================================================
-// avoidance_system.hpp — Layer 2: outer collision-repair system (= MATLAB System v3)
+// avoidance_system.hpp — Layer 2: outer collision-repair system
 // =====================================================================
 //   outer collision-repair loop: Clamped Spline initial trajectory -> collision detection -> find targets ->
 //   call the inner Newton optimization -> Spline reconstruction -> re-check (up to max_refinement_iter rounds)
 //   includes CSV export (all data export except plotting)
 //
-//   [MATLAB] corresponding class: Dual_Arm_avoidance_system_v3
 //   all in degrees; independent of MoveIt (pure math, usable standalone)
 // =====================================================================
 #ifndef DUAL_ARM_LAG_NEWTON_PLANNER_AVOIDANCE_SYSTEM_HPP
@@ -19,7 +18,7 @@
 namespace dual_arm_lag_newton_planner
 {
 
-// [MATLAB] trajectory struct
+// trajectory struct
 struct Trajectory {
   Eigen::VectorXd time;   // (T)   step index
   Eigen::MatrixXd posA;   // (Tx6) Arm A joint angles
@@ -27,17 +26,17 @@ struct Trajectory {
   Eigen::MatrixXd pos;    // (Tx12) [posA, posB]
 };
 
-// [MATLAB] the indices returned by find_collision_targets
+// the indices returned by find_collision_targets
 struct CollisionIndices {
   int minidx = 0;
   int maxidx = 0;
   std::vector<int> targets;   // 5 control points (0-indexed): [Head, q1, peak, q3, Tail]
 };
 
-// [MATLAB] iter_log entry (snapshot of each outer repair round, for export)
+// iter_log entry (snapshot of each outer repair round, for export)
 struct IterLogEntry {
-  Trajectory          traj_in;       // pre-repair trajectory
-  Trajectory          traj_out;      // post-repair trajectory
+  Trajectory          traj_in;        // pre-repair trajectory
+  Trajectory          traj_out;       // post-repair trajectory
   Eigen::VectorXd     path_D_max_in;  // per-step max_D before repair
   Eigen::VectorXd     path_D_max_out; // per-step max_D after repair
   std::vector<int>    targets_in;     // 5 points (pre-repair index)
@@ -48,13 +47,13 @@ struct IterLogEntry {
 class AvoidanceSystem
 {
 public:
-  // [MATLAB] constructor (A_waypoints, B_waypoints, path_weight, DANGER_THRESHOLD=0.4)
+  // constructor (A_waypoints, B_waypoints, path_weight, danger_threshold=0.4)
   //   A_waypoints/B_waypoints: 2x6 (start row + goal row), degrees
   AvoidanceSystem(const Eigen::MatrixXd& A_waypoints,
                   const Eigen::MatrixXd& B_waypoints,
                   double path_weight,
                   double danger_threshold    = 0.35,
-                  // the following are tunable parameters (with defaults; if not passed, MATLAB defaults are used)
+                  // the following are tunable parameters (with defaults if not passed)
                   double collision_tolerance = 0.1,
                   double fix_tolerance       = 0.1,
                   int    max_refinement_iter = 15,
@@ -63,7 +62,7 @@ public:
                   double smooth_w_T          = 1.0,
                   double smooth_w_neighbor   = 1.0);
 
-  // [MATLAB] run_optimization: the collision-repair main loop
+  // run_optimization: the collision-repair main loop
   void run_optimization();
 
   // ===== Getters (only getters are exposed externally) =====
@@ -75,7 +74,7 @@ public:
   void set_solver_verbose(bool v) { solver_verbose_ = v; }
 
   // [NEW] pure Lagrangian parameter injection (yaml-tunable; if not called, the solver defaults are used)
-  //   ⚠ λ/S are the initial values of decision variables (not the ALM outer multipliers); a different concept from ALM's set_alm_params
+  //   ⚠ λ/S are the initial values of decision variables (not outer penalty multipliers)
   void set_lag_params(double wd, double lam0, double s0,
                       double tol_phys_margin, double tol_stable,
                       double tol_stat, int max_iter)
@@ -120,9 +119,9 @@ private:
   bool   is_optimized_ = false;
   int    refinement_count_ = 0;
   bool   solver_verbose_   = false;   // [NEW] passed through to the inner solver
-  // [NEW] pure Lagrangian parameters (default = Newton_v2 values)
+  // [NEW] pure Lagrangian parameters (default values)
   double lag_wd_         = 1.0;     // dual strength (penalty coefficient)
-  double lag_lam0_       = 30.0;    // λ_0 (⚠ the comment says 10, the actual code = 30)
+  double lag_lam0_       = 30.0;    // λ_0 (⚠ default here is 30, not 10)
   double lag_s0_         = 1.0;     // S_0 (S²=1)
   double lag_tol_phys_   = 0.01;    // max_D ≤ θ + margin
   double lag_tol_stable_ = 0.01;   // |Δmax_D| ≤ TOL_STABLE
@@ -132,7 +131,7 @@ private:
   std::vector<double> time_ms_;            // inner-loop time per round
   std::vector<IterLogEntry> iter_log_;
 
-  // ===== Private methods (= MATLAB private) =====
+  // ===== Private methods =====
   void generate_initial_trajectory();
   void check_collision(const Trajectory& traj,
                        Eigen::VectorXd& path_D_max, bool& is_collision,

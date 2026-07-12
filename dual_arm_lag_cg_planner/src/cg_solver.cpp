@@ -1,10 +1,8 @@
 // =====================================================================
 // cg_solver.cpp — Layer 1 pure Lagrangian gradient-descent solver implementation
-//   = MATLAB Dual_Arm_Lagrangian_Gradient_v2
 // =====================================================================
-//   the geometry layer (sphere constants / transmatrix / calc_df / mask / FK) with ALM, Newton
-//   is bit-identical across the lineage (the same robot model, verified item by item against the v2 MATLAB).
-//   the solver math layer (L / G / line_search / run_lag) is ported per Con_v2.
+// geometry layer: sphere constants / transmatrix / calc_df / mask / FK (shared robot model)
+// solver layer: cost L, gradient G, line search, run_lag main loop
 // =====================================================================
 #include "dual_arm_lag_cg_planner/cg_solver.hpp"
 
@@ -17,8 +15,8 @@ namespace dual_arm_lag_cg_planner
 {
 
 // =====================================================================
-// bounding-sphere constants (= arm_r/arm_p/arm_frame, ped_* inside MATLAB robot_arm_bubble)
-//   ⚠ bit-identical to the ALM/Newton lineage — when changing the robot, all six packages must be modified in sync
+// bounding-sphere constants for the two robot arms (link id, radius, local xyz)
+//   ⚠ if the robot changes, keep these in sync across all packages that share this model
 // =====================================================================
 const std::vector<BubbleDef> CgSolver::PEDESTAL_A = {
   { -1, 320.0,  220.0,  -65.0, 55.0 },
@@ -64,7 +62,7 @@ const std::vector<BubbleDef> CgSolver::BUBBLES_B = {
 };
 
 // =====================================================================
-// transmatrix → make_rotation / make_translation  (= MATLAB transmatrix)
+// make_rotation / make_translation: build a 4x4 homogeneous transform
 // =====================================================================
 Eigen::Matrix4d CgSolver::make_rotation(char axis, double angle_deg)
 {
@@ -118,10 +116,10 @@ Eigen::MatrixXd CgSolver::calc_df(const Eigen::VectorXd& R1, const Eigen::Vector
 // =====================================================================
 Eigen::Array<bool, 16, 18> CgSolver::get_collision_masks()
 {
-  // sphere → link ID (1-indexed, same as MATLAB sA/sB)
+  // sphere → link ID (1-indexed)
   static const int sA[16] = {1,1,1,1, 2, 3, 4,4,4,4, 5, 6,6,6, 7, 8};
   static const int sB[18] = {1,1,1,1,1,1,1,1, 2, 3, 4,4,4, 5, 6,6, 7, 8};
-  // [MATLAB] cAB: links 1~3 (base/pedestal/L1) all 0; links 4~8 all 1
+  // cAB: links 1~3 (base/pedestal/L1) all 0; links 4~8 all 1
   auto cAB = [](int rowLink, int /*colLink*/) -> bool { return rowLink >= 4; };
   Eigen::Array<bool, 16, 18> mask;
   for (int i = 0; i < 16; ++i)
@@ -162,7 +160,7 @@ void CgSolver::robot_arm_bubble_RA610(const Eigen::Matrix4d& T_base, const doubl
   for (int i = 0; i < 7; ++i) {
     T_cum = T_cum * T[i];
     for (const BubbleDef& b : BUBBLES_A) {
-      if (b.link_id == i) {   // [MATLAB] arm_frame(j) == i-1 (0-indexed alignment)
+      if (b.link_id == i) {   // sphere attached to link i (0-indexed)
         Eigen::Vector4d w = T_cum * Eigen::Vector4d(b.cx, b.cy, b.cz, 1.0);
         const int out_idx = NUM_PED + arm_k;
         bubble.row(out_idx) = w.head<3>().transpose();
@@ -219,7 +217,7 @@ void CgSolver::robot_arm_bubble_RA605(const Eigen::Matrix4d& T_base, const doubl
 }
 
 // =====================================================================
-// constructor (= MATLAB Dual_Arm_Lagrangian_Gradient_v2 constructor)
+// constructor: build dimensions, mask indices, head/tail/interior points, initial V_0
 // =====================================================================
 CgSolver::CgSolver(const Eigen::MatrixXd& X,
                    const Eigen::Matrix4d& robotA_base,
@@ -235,11 +233,11 @@ CgSolver::CgSolver(const Eigen::MatrixXd& X,
     smooth_w_(smooth_w), smooth_w_H_(smooth_w_H),
     smooth_w_T_(smooth_w_T), smooth_w_neighbor_(smooth_w_neighbor)
 {
-  // [MATLAB] M = size(X,1) - 2 (excluding head and tail); N = 6
+  // M = number of interior points (excluding head and tail); N = 6 axes per arm
   M_ = static_cast<int>(X.rows()) - 2;
   N_ = 6;
 
-  // [MATLAB] mask → linear indices (column-major, consistent with MATLAB logical indexing)
+  // mask → linear indices (column-major)
   Eigen::Array<bool, 16, 18> mask = get_collision_masks();
   lin_idx_AB_.clear();
   for (int col = 0; col < 18; ++col)
@@ -255,18 +253,18 @@ CgSolver::CgSolver(const Eigen::MatrixXd& X,
 
   std::cout << "  [Mask] A×B: " << K_AB_ << " → num_D = " << num_D_ << "\n";
 
-  // [MATLAB] head/tail points X_H/X_T = [A; B]
+  // head/tail points X_H/X_T = [A; B]
   X_H_.row(0) = X.row(0).segment(0, 6);
   X_H_.row(1) = X.row(0).segment(6, 6);
   X_T_.row(0) = X.row(X.rows()-1).segment(0, 6);
   X_T_.row(1) = X.row(X.rows()-1).segment(6, 6);
 
-  // [MATLAB] interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
+  // interior points' original joint angles oriPos = [Xa_ori, Xb_ori] (M x 12)
   oriPos_.resize(M_, 12);
   for (int m = 0; m < M_; ++m)
     oriPos_.row(m) = X.row(m + 1);
 
-  // [MATLAB] V_0 = [X_0; λ_0; S_0]; X_0 each point [A1..6, B1..6]
+  // V_0 = [X_0; λ_0; S_0]; X_0 each point [A1..6, B1..6]
   rebuild_initial_V_();
 
   std::cout << "  [Init] Max_D=" << compute_Dx_all(Xm_initial_.head(num_X_)).maxCoeff()
@@ -294,7 +292,6 @@ void CgSolver::rebuild_initial_V_()
   }
 
   // λ segment (num_C): all lam0_
-  //   [MATLAB] lam_init(Dx_init>θ)=30 is an entry point for future ablation; since lam0=30 it is equivalent to filling all
   Xm_initial_.segment(num_X_, num_C_).setConstant(lam0_);
   // S segment (num_C): all s0_ (S² = s0_²)
   Xm_initial_.segment(num_X_ + num_C_, num_C_).setConstant(s0_);
@@ -302,7 +299,7 @@ void CgSolver::rebuild_initial_V_()
 
 // =====================================================================
 // compute_Dm: the danger-factor vector at point m (0-indexed) (num_D)
-//   X: the num_X-dim X vector (not the full V)
+// X: the num_X-dim X vector (not the full V)
 // =====================================================================
 Eigen::VectorXd CgSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 {
@@ -316,7 +313,7 @@ Eigen::VectorXd CgSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
 
   Eigen::MatrixXd sj = calc_df(rA, rB, bA, bB);   // 16x18
 
-  // [MATLAB] D_m = sj(mask_AB) → column-major take lin_idx_AB
+  // D_m = sj at masked positions (column-major, via lin_idx_AB)
   Eigen::VectorXd D_m(K_AB_);
   for (int k = 0; k < K_AB_; ++k) {
     const int idx = lin_idx_AB_[k];
@@ -325,7 +322,7 @@ Eigen::VectorXd CgSolver::compute_Dm(const Eigen::VectorXd& X, int m) const
   return D_m;
 }
 
-// [MATLAB] compute_Dx_all: concatenation over all M points (num_C)
+// compute_Dx_all: concatenation of compute_Dm over all M points (num_C)
 Eigen::VectorXd CgSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 {
   Eigen::VectorXd Dx(num_C_);
@@ -336,7 +333,7 @@ Eigen::VectorXd CgSolver::compute_Dx_all(const Eigen::VectorXd& X) const
 
 // =====================================================================
 // compute_D_cache: D_base (num_D x M) + D_plus (M matrices num_D x 12)
-//   forward difference (CG/GD do not need D_minus); corresponds to MATLAB compute_D_cache
+//   forward difference only (CG/GD do not need D_minus)
 // =====================================================================
 void CgSolver::compute_D_cache(const Eigen::VectorXd& V,
                                Eigen::MatrixXd& D_base,
@@ -440,11 +437,11 @@ double CgSolver::cost_function_F(const Eigen::VectorXd& V) const
   return f;
 }
 
-// [NEW] split out fa/fb to pass outward (= the internal values of MATLAB cost_function_F, originally only debug-printed)
+// [NEW] cost_function_F_split: split f into per-arm fa/fb for external logging
 void CgSolver::cost_function_F_split(const Eigen::VectorXd& V,
                                      double& f, double& fa, double& fb) const
 {
-  // [MATLAB] X = reshape(V(1:num_X),12,[])'  → row m = [Xa_m, Xb_m]
+  // X reshaped from V's X segment: row m = [Xa_m, Xb_m]
   Eigen::MatrixXd Xmat(M_, 12);
   for (int m = 0; m < M_; ++m)
     Xmat.row(m) = V.segment(idx_Xm(m), 12).transpose();
@@ -525,7 +522,6 @@ double CgSolver::line_search_newton_1d(const Eigen::VectorXd& V, const Eigen::Ve
 
 // =====================================================================
 // run_lag: the main loop (CG Fletcher-Reeves + 1D Newton line search)
-//   = MATLAB Dual_Arm_Lagrangian_Con_v2.run_newton (renamed run_lag in C++)
 // =====================================================================
 SolverLog CgSolver::run_lag()
 {
