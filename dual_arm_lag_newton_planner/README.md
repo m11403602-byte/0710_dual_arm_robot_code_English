@@ -1,116 +1,188 @@
-# dual_arm_lag_newton_planner
+# <p align="center">dual_arm_lag_newton_planner</p>
 
-雙臂避障路徑規劃器 — ROS 2 Humble / MoveIt2 插件。
+<p align="justify">
+Dual-arm collision-avoidance path planner — a ROS 2 Humble / MoveIt2 plugin.
+</p>
 
-使用 C++17 + Eigen3 實作。內層採用 **純 Lagrangian（決策變數 V=[X;λ;S]）+ Newton 法（KKT Hessian + LDLT）**。
-
----
-
-## 演算法概觀
-
-兩隻機械臂（RA610 16 球 / RA605 18 球包覆模型），給定起點與終點關節角，求一條兩臂互不碰撞的關節空間軌跡。
-
-採雙層最佳化：
-
-```
-外層 (avoidance_system):  生成初始軌跡 -> 碰撞偵測 -> 找危險段 5 點 ->
-                          呼叫內層優化 -> Spline 重建 -> 重新檢查 (最多 max_refinement_iter 輪，可調參數)
-內層 (newton_solver):         純 Lagrangian 單迴圈 (V=[X;λ;S] ∈ ℝ^1116) + Newton (LDLT)
-```
-
-危險因子閾值 `danger_threshold = 0.35`、碰撞判定餘隙 `collision_tolerance = 0.15`（皆 yaml 預設，須為正值）。碰撞邊界(0.5) = `danger_threshold + collision_tolerance`；**設定時兩者之和不得超過碰撞邊界(0.5)**（0.5 = 兩球相切，超過即會漏判真碰撞）。
+<p align="justify">
+Implemented in C++17 + Eigen3. The inner loop employs <b> a pure Lagrangian formulation (decision variable V=[X;λ;S]) + Newton's method (KKT Hessian + LDLT) </b> .
+</p>
 
 ---
 
-## 架構：單一 .so
+## Algorithm Overview
 
-所有原始碼（核心演算法 + MoveIt 插件介面）編進**單一共享庫** `libdual_arm_lag_newton_planner.so`。
+<p align="justify">
+Given the start and goal joint angles of the two manipulators (bounding-sphere models: RA610 with 16 spheres / RA605 with 18 spheres), the planner solves for a joint-space trajectory in which the two arms do not collide.
+</p>
 
-| 組成 | 角色 |
-|------|------|
-| `newton_solver` | 第 1 層: 內層 Newton 求解器（V=[X;λ;S]）+ FK + 包覆球 + 危險因子 |
-| `avoidance_system` | 第 2 層: 外層碰撞修復迴圈 + Spline 重建 |
-| `data_io` | CSV 寫入工具（若需要查看關節路徑與危險因子變化） |
-| `planner_manager` | 第 3 層: MoveIt2 PlannerManager / PlanningContext |
+<p align="justify">
+It adopts a two-level (bilevel) optimization scheme:
+</p>
+
+```
+Outer level (avoidance_system):  generate initial trajectory -> collision detection -> pick the 5 points of the dangerous segment ->
+                                 call inner optimization -> Spline reconstruction -> re-check (up to max_refinement_iter rounds, tunable)
+Inner level (newton_solver):     single-loop pure Lagrangian (V=[X;λ;S] ∈ ℝ^1116) + Newton (LDLT)
+```
+
+<p align="justify">
+The danger-factor threshold <code>danger_threshold = 0.35</code> and the collision-clearance margin <code>collision_tolerance = 0.15</code> (both are yaml defaults and must be positive). The collision boundary (0.5) = <code>danger_threshold + collision_tolerance</code>; <b> when configuring, the sum of the two must not exceed the collision boundary (0.5) </b> (0.5 = the two spheres are tangent, and exceeding it would fail to detect genuine collisions).
+</p>
 
 ---
 
-## 優化流程與變數說明
+## Architecture: A Single .so
 
-### 外層：碰撞修復迴圈 (`AvoidanceSystem::run_optimization`)
+<p align="justify">
+All source code (the core algorithm + the MoveIt plugin interface) is compiled into a <b> single shared library </b> <code>libdual_arm_lag_newton_planner.so</code> .
+</p>
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ Clamped Cubic Spline 生成初始軌跡 (A/B 臂 起點 → 終點)                │
-│        │                                                            │
-│        ▼                                                            │
-│ 逐步計算危險因子 D_m = calc_df(...) → max_D(t)                       │
-│        │                                                            │
-│        ▼                                                            │
-│ max_D(t) >= 碰撞邊界(0.5) (=danger_threshold + collision_tolerance)│
-│ 代表碰撞持續優化 ?  ──否──▶ 完成 (has_collision=false)               │
-│        │是                                                          │
-│        ▼                                                            │
-│ find_collision_targets(): 取危險段 5 個控制點                        │
-│   [Head, q1, peak, q3, Tail]                                        │
-│        │                                                            │
-│        ▼                                                            │
-│ 取 3 個內部點 (q1, peak, q3) 組成 X (36 維), 連同 λ0/S0 組 V0        │
-│ 呼叫內層優化器 run_lag(V0) → V* = [X*; λ*; S*]                       │
-│        │                                                            │
-│        ▼                                                            │
-│ regenerate_trajectory_global(): 用 X* 做局部 Spline 重建整段軌跡      │
-│        │                                                            │
-│        ▼                                                            │
-│ 重新計算 max_D(t)，回到「危險判定」 (最多 max_refinement_iter 輪)     │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-
-### 內層：純 Lagrangian 牛頓求解器 (`NewtonSolver::run_lag`)
-
-> 圖中「參數名=數值」為 yaml 預設值示例，實際以 config 為準。
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ 初始化: V = [X0; λ = lag_lam0(=30); S = lag_s0(=1)]                │
-│        │                                                          │
-│        ▼                                                          │
-│  ┌── 主迴圈 (最多 lag_max_iter=500 步) ──────────────────────────┐  │
-│  │  計算 KKT 殘差 G(V) = [G_X; G_λ; G_S] 與 KKT Hessian H         │  │
-│  │  解 d = -(H \ G)   (Eigen LDLT 分解)                           │  │
-│  │  V ← V + d   (alpha = 1, 純 Newton 步)                         │  │
-│  │        ▼                                                       │  │
-│  │  收斂判定: max_D ≤ danger_threshold + lag_tol_phys_margin(=0.01)│ │
-│  │           && |Δmax_D| ≤ lag_tol_stable(=0.01)                  │  │
-│  │           && ‖G‖ ≤ lag_tol_stat(=0.1)   (⚠ Newton 啟用)         │  │
-│  │      ──否──▶ 繼續下一步                                         │  │
-│  └── 是 ──▶ 回傳 V* = [X*; λ*; S*]、SolverLog ──────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-### 主要變數
-
-| 變數 | 意義 | 維度 |
-|------|------|------|
-| `V` | 決策變數 `[X; λ; S]`（一次解整包，λ/S 非外層更新）| 1116 |
-| `X` | 危險段 3 個內部控制點 × 雙臂各 6 軸（degree）| 36 |
-| `λ` | 不等式約束乘子（決策變數之一）| `num_C_` |
-| `S` | 鬆弛變數（以 S² 把不等式轉等式）| `num_C_` |
-| `G` | Lagrangian 對 V 的梯度（KKT 殘差 `[G_X; G_λ; G_S]`）| 1116 |
-| `d` | Newton 方向 `-(H\\G)`（LDLT） | 1116 |
-| `H` | KKT Hessian（不定鞍點結構）| 1116×1116 |
-
-各參數的預設值與說明詳見 [PARAMETERS.md](PARAMETERS.md)。
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="justify">Component</th>
+      <th align="justify">Role</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><code>newton_solver</code></td>
+      <td align="justify">Layer 1: inner Newton solver (V=[X;λ;S]) + FK + bounding spheres + danger factor</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>avoidance_system</code></td>
+      <td align="justify">Layer 2: outer collision-repair loop + Spline reconstruction</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>data_io</code></td>
+      <td align="justify">CSV writing utility (for inspecting the joint path and the evolution of the danger factor, when needed)</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>planner_manager</code></td>
+      <td align="justify">Layer 3: MoveIt2 PlannerManager / PlanningContext</td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
-## 目錄結構
+## Optimization Workflow and Variable Definitions
 
-- **根目錄檔案**（`CMakeLists.txt` / `package.xml` / `*.xml` / `README.md` / `PARAMETERS.md`）：**建置與描述層**——定義怎麼編譯和對外說明文件。
-- **`config/`**：**執行期參數層**——存放 move_group 啟動時讀入的 yaml 參數，需複製為 `hiwin_dual_arm/config/dual_arm_lag_newton_planning.yaml`。
-- **`include/dual_arm_lag_newton_planner/`**：**介面宣告層**。
-- **`src/`**：**演算法實作層**。
+### Outer Level: Collision-Repair Loop ( <code>AvoidanceSystem::run_optimization</code> )
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│ Clamped Cubic Spline generates the initial trajectory (Arm A/B: start -> goal)   │
+│      |                                                                           │
+│      v                                                                           │
+│ Incrementally compute the danger factor  D_m = calc_df(...) -> max_D(t)          │
+│      |                                                                           │
+│      v                                                                           │
+│ max_D(t) >= collision boundary (0.5)  (= danger_threshold + collision_tolerance) │
+│ still colliding, keep optimizing?   --No-->  Done (has_collision=false)          │
+│      | Yes                                                                       │
+│      v                                                                           │
+│ find_collision_targets(): take the 5 control points of the dangerous segment     │
+│    [Head, q1, peak, q3, Tail]                                                    │
+│      |                                                                           │
+│      v                                                                           │
+│ take the 3 interior points (q1, peak, q3) as X (36-dim), with λ0/S0 forming V0   │
+│ call the inner optimizer  run_lag(V0) -> V* = [X*; λ*; S*]                       │
+│      |                                                                           │
+│      v                                                                           │
+│ regenerate_trajectory_global(): local Spline rebuild of the full path via X*     │
+│      |                                                                           │
+│      v                                                                           │
+│ recompute max_D(t), back to "danger check" (up to max_refinement_iter rounds)    │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Inner Level: Pure Lagrangian Newton Solver ( <code>NewtonSolver::run_lag</code> )
+
+> <div align="justify">In the diagram, the "parameter=value" pairs are illustrative yaml defaults; the actual values are governed by the config.</div>
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ initialize:  V = [X0; λ = lag_lam0(=30); S = lag_s0(=1)]                    │
+│      |                                                                      │
+│      v                                                                      │
+│ ┌─ main loop (up to lag_max_iter=500 steps) ──────────────────────────────┐ │
+│ │ compute the KKT residual  G(V) = [G_X; G_λ; G_S]  and the KKT Hessian H │ │
+│ │ solve  d = -(H \ G)   (Eigen LDLT decomposition)                        │ │
+│ │ V <- V + d   (alpha = 1, pure Newton step)                              │ │
+│ │      v                                                                  │ │
+│ │ convergence: max_D <= danger_threshold + lag_tol_phys_margin(=0.01)     │ │
+│ │              && |Δmax_D| <= lag_tol_stable(=0.01)                       │ │
+│ │              && ‖G‖ <= lag_tol_stat(=0.1)   (⚠ enabled for Newton)      │ │
+│ │      --No--> next step                                                  │ │
+│ └─ Yes --> return V* = [X*; λ*; S*], SolverLog ───────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Principal Variables
+
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="justify">Variable</th>
+      <th align="justify">Meaning</th>
+      <th align="justify">Dimension</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><code>V</code></td>
+      <td align="justify">Decision variable <code>[X; λ; S]</code> (solved as one package; λ/S are not updated by an outer loop)</td>
+      <td align="justify">1116</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>X</code></td>
+      <td align="justify">The 3 interior control points of the dangerous segment × 6 axes per arm (degree)</td>
+      <td align="justify">36</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>λ</code></td>
+      <td align="justify">Inequality-constraint multipliers (one of the decision variables)</td>
+      <td align="justify"><code>num_C_</code></td>
+    </tr>
+    <tr>
+      <td align="justify"><code>S</code></td>
+      <td align="justify">Slack variables (converting inequalities to equalities via S²)</td>
+      <td align="justify"><code>num_C_</code></td>
+    </tr>
+    <tr>
+      <td align="justify"><code>G</code></td>
+      <td align="justify">Gradient of the Lagrangian with respect to V (the KKT residual <code>[G_X; G_λ; G_S]</code> )</td>
+      <td align="justify">1116</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>d</code></td>
+      <td align="justify">Newton direction <code>-(H\G)</code> (LDLT)</td>
+      <td align="justify">1116</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>H</code></td>
+      <td align="justify">KKT Hessian (indefinite saddle-point structure)</td>
+      <td align="justify">1116×1116</td>
+    </tr>
+  </tbody>
+</table>
+
+<p align="justify">
+For the default values and descriptions of every parameter, see <a href="PARAMETERS.md">PARAMETERS.md</a> .
+</p>
+
+---
+
+## Directory Structure
+
+<ul>
+  <li align="justify" style="margin-bottom: 8px;"><b> Root-directory files </b> ( <code>CMakeLists.txt</code> / <code>package.xml</code> / <code>*.xml</code> / <code>README.md</code> / <code>PARAMETERS.md</code> ) : <b> the build & description layer </b> — defines how the package is compiled and provides the external documentation.</li>
+  <li align="justify" style="margin-bottom: 8px;"><b> <code>config/</code> </b> : <b> the runtime-parameter layer </b> — stores the yaml parameters loaded when move_group starts; must be copied as <code>hiwin_dual_arm/config/dual_arm_lag_newton_planning.yaml</code> .</li>
+  <li align="justify" style="margin-bottom: 8px;"><b> <code>include/dual_arm_lag_newton_planner/</code> </b> : <b> the interface-declaration layer </b> .</li>
+  <li align="justify" style="margin-bottom: 8px;"><b> <code>src/</code> </b> : <b> the algorithm-implementation layer </b> .</li>
+</ul>
 
 ```
 dual_arm_lag_newton_planner/
@@ -133,24 +205,64 @@ dual_arm_lag_newton_planner/
     └── planner_manager.cpp
 ```
 
-| 檔案 | 功能 |
-|------|------|
-| `CMakeLists.txt` | 建置設定：編譯單一 .so |
-| `package.xml` | ROS 2 套件描述與相依宣告 |
-| `dual_arm_lag_newton_planner.xml` | pluginlib 插件描述（讓 MoveIt2 動態載入） |
-| `README.md` | 本文件 |
-| `PARAMETERS.md` | 參數對照表（可調參數） |
-| `config/dual_arm_lag_newton_planner.yaml` | 規劃器參數（需複製為 `hiwin_dual_arm/config/dual_arm_lag_newton_planning.yaml`） |
-| `newton_solver.hpp/.cpp` | 第 1 層：FK、包覆球、危險因子、純 Lagrangian Newton 求解 |
-| `avoidance_system.hpp/.cpp` | 第 2 層：外層碰撞修復迴圈、Spline 重建、CSV 匯出 |
-| `data_io.hpp/.cpp` | CSV 寫入工具 |
-| `planner_manager.hpp/.cpp` | 第 3 層：MoveIt2 插件介面（radian↔degree、時間參數化） |
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="justify">File</th>
+      <th align="justify">Function</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><code>CMakeLists.txt</code></td>
+      <td align="justify">Build configuration: compiles the single .so</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>package.xml</code></td>
+      <td align="justify">ROS 2 package description and dependency declarations</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>dual_arm_lag_newton_planner.xml</code></td>
+      <td align="justify">pluginlib plugin description (enables dynamic loading by MoveIt2)</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>README.md</code></td>
+      <td align="justify">This document</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>PARAMETERS.md</code></td>
+      <td align="justify">Parameter reference table (tunable parameters)</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>config/dual_arm_lag_newton_planner.yaml</code></td>
+      <td align="justify">Planner parameters (must be copied as <code>hiwin_dual_arm/config/dual_arm_lag_newton_planning.yaml</code> )</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>newton_solver.hpp/.cpp</code></td>
+      <td align="justify">Layer 1: FK, bounding spheres, danger factor, pure Lagrangian Newton solve</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>avoidance_system.hpp/.cpp</code></td>
+      <td align="justify">Layer 2: outer collision-repair loop, Spline reconstruction, CSV export</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>data_io.hpp/.cpp</code></td>
+      <td align="justify">CSV writing utility</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>planner_manager.hpp/.cpp</code></td>
+      <td align="justify">Layer 3: MoveIt2 plugin interface (radian ↔ degree, time parameterization)</td>
+    </tr>
+  </tbody>
+</table>
 
 ---
 
-## 編譯
+## Building
 
-放進 ROS 2 workspace 的 `src/` 後：
+<p align="justify">
+After placing the package into the <code>src/</code> directory of a ROS 2 workspace:
+</p>
 
 ```bash
 cd ~/ros2_ws
@@ -158,67 +270,127 @@ colcon build --packages-select dual_arm_lag_newton_planner
 source install/setup.bash
 ```
 
-需求：ROS 2 Humble、MoveIt2、Eigen3、C++17 編譯器。
+<p align="justify">
+Requirements: ROS 2 Humble, MoveIt2, Eigen3, and a C++17 compiler.
+</p>
 
-### ⚠️ 編譯選項：使用 `-O3`，**不要用 `-march=native`**
+### ⚠️ Compilation Flags: Use <code>-O3</code>, <b> Do Not Use <code>-march=native</code> </b>
 
-CMake 預設 Release `-O3 -DNDEBUG`（**刻意不含 `-march=native`**，會與 MoveIt 的 Eigen 記憶體對齊衝突而崩潰）。
+<p align="justify">
+The CMake default Release flags are <code>-O3 -DNDEBUG</code> ( <b> deliberately excluding <code>-march=native</code> </b> , which would conflict with MoveIt's Eigen memory alignment and cause a crash).
+</p>
 
 ---
 
-## 使用方式（MoveIt2 插件）
+## Usage (MoveIt2 Plugin)
 
-> 前提：與 `hiwin_dual_arm`（機器人描述 + MoveIt 設定）同 workspace。
+> <div align="justify">Prerequisite: reside in the same workspace as <code>hiwin_dual_arm</code> (the robot description + MoveIt configuration).</div>
 
-1. 把本包 `config/dual_arm_lag_newton_planner.yaml` 複製為
-   `hiwin_dual_arm/config/dual_arm_lag_newton_planning.yaml`（檔名依規劃器而不同）。
-   檔內已含 `planning_plugin` 與 `request_adapters` 完整設定，複製即可、無需再改 pipeline。
-2. 啟動（例）：
+<ol>
+  <li align="justify" style="margin-bottom: 8px;">Copy this package's <code>config/dual_arm_lag_newton_planner.yaml</code> as <code>hiwin_dual_arm/config/dual_arm_lag_newton_planning.yaml</code> (the filename differs from planner to planner). The file already contains the complete <code>planning_plugin</code> and <code>request_adapters</code> settings, so copying it suffices — no further pipeline changes are required.</li>
+  <li align="justify" style="margin-bottom: 8px;">Launch (example):</li>
+</ol>
 
 ```bash
 ros2 launch hiwin_dual_arm brain.launch.py
 ```
 
-規劃請求需含 joint goal constraints。
+<p align="justify">
+The planning request must include joint goal constraints.
+</p>
 
-**改參數**：編輯 yaml → 重新複製到 `hiwin_dual_arm/config/` → 重啟 move_group 生效（**不用重編**）。
-
----
-
-## CSV 匯出
-
-對外唯一入口：`export_unified(prefix, level)`。輸出到 `prefix/<timestamp>_Newton/` 目錄（每次匯出自成一個時間戳資料夾，不互相覆蓋）。
-
-| level | 檔案 | 內容 |
-|:---:|------|------|
-| **0** | （無） | 完全不匯出（總開關；yaml 目前預設） |
-| **1** | `meta.csv` | 參數快照（key/value） |
-| | `summary.csv` | 每輪修復計分板 |
-| | `inner.csv` | 內層逐步串接（iter / ‖G‖ / ‖d‖ / alpha / λ / S / cond_H） |
-| | `danger_final.csv` | 初始 vs 最終每步 MaxD 對照 |
-| | `danger_rounds.csv` | 長表 round／step／MaxD_in／MaxD_out |
-| | `targets.csv` | 每輪 5 特徵點（索引 + D 值 + 優化前後關節角） |
-| **2** | 以上 6 檔 + `constraints_all.csv` | 全約束 D 值大表 |
-| | `path_original.csv` | 初始軌跡全點 |
-| | `path_evolution.csv` | 長表 round／step／A1..B6 |
-
-MoveIt 路徑由 yaml 的 `export_csv_prefix`（預設 `./lag_data`）與 `export_level` 控制（預設 0 = 不匯出；要留資料改 1 或 2 後重啟 move_group）。所有 CSV 可用 Excel、Python `pandas.read_csv` 直接開啟。
-
-> ⚠ Newton 專屬：`inner.csv` 的 `cond_H` 欄僅在 `solver_verbose: true` 時計算（每迭代一次 1116 維特徵分解，會明顯拖慢），否則記 0。
+<p align="justify">
+<b> Changing parameters </b> : edit the yaml → re-copy it to <code>hiwin_dual_arm/config/</code> → restart move_group for the changes to take effect ( <b> no recompilation needed </b> ).
+</p>
 
 ---
 
-## 需要調整的地方
+## CSV Export
 
-部署前請依實際機器人調整：
+<p align="justify">
+The single public entry point is <code>export_unified(prefix, level)</code> . Output is written to the <code>prefix/&lt;timestamp&gt;_Newton/</code> directory (each export forms its own timestamped folder, so exports never overwrite one another).
+</p>
 
-1. **關節名**（`src/planner_manager.cpp` 的 `solve()`）：目前用 A 臂 `big_joint_1~6`、B 臂 `small_joint_1~6`，改成你 SRDF 的實際關節名。
-2. **planning group**：solve 用 `req.group_name`，確認 SRDF 的 group 設定。
-3. **機器人底座**（`avoidance_system.cpp` 建構函數）：目前 A 臂 `Ty(700)Rz(180)`、B 臂 `Ty(-700)`，兩臂相距 1400mm 面對面 — 依實際擺位調整。
-4. **包覆球參數**（`newton_solver.cpp` 的 `BUBBLES_*` / `PEDESTAL_*` 常數）：RA610/RA605 的球座標與半徑，依實際機型確認。
+<table width="100%">
+  <thead>
+    <tr>
+      <th align="justify">level</th>
+      <th align="justify">File</th>
+      <th align="justify">Content</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="justify"><b> 0 </b></td>
+      <td align="justify">(none)</td>
+      <td align="justify">Nothing is exported at all (master switch; the current yaml default)</td>
+    </tr>
+    <tr>
+      <td align="justify" rowspan="6"><b> 1 </b></td>
+      <td align="justify"><code>meta.csv</code></td>
+      <td align="justify">Parameter snapshot (key/value)</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>summary.csv</code></td>
+      <td align="justify">Per-round repair scoreboard</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>inner.csv</code></td>
+      <td align="justify">Concatenated inner-loop steps (iter / ‖G‖ / ‖d‖ / alpha / λ / S / cond_H)</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>danger_final.csv</code></td>
+      <td align="justify">Initial vs. final per-step MaxD comparison</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>danger_rounds.csv</code></td>
+      <td align="justify">Long table: round / step / MaxD_in / MaxD_out</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>targets.csv</code></td>
+      <td align="justify">The 5 feature points per round (index + D value + joint angles before/after optimization)</td>
+    </tr>
+    <tr>
+      <td align="justify" rowspan="3"><b> 2 </b></td>
+      <td align="justify">The above 6 files + <code>constraints_all.csv</code></td>
+      <td align="justify">Full constraint D-value table</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>path_original.csv</code></td>
+      <td align="justify">All points of the initial trajectory</td>
+    </tr>
+    <tr>
+      <td align="justify"><code>path_evolution.csv</code></td>
+      <td align="justify">Long table: round / step / A1..B6</td>
+    </tr>
+  </tbody>
+</table>
+
+<p align="justify">
+On the MoveIt path, export is governed by the yaml keys <code>export_csv_prefix</code> (default <code>./lag_data</code> ) and <code>export_level</code> (default 0 = no export; to retain data, set it to 1 or 2 and restart move_group). All CSV files can be opened directly in Excel or with Python's <code>pandas.read_csv</code> .
+</p>
+
+> <div align="justify">⚠ Newton-specific: the <code>cond_H</code> column of <code>inner.csv</code> is computed only when <code>solver_verbose: true</code> (one 1116-dimensional eigendecomposition per iteration, which noticeably slows things down); otherwise it is recorded as 0.</div>
 
 ---
 
-## 授權
+## Items Requiring Adjustment
 
+<p align="justify">
+Before deployment, adjust the following according to your actual robot:
+</p>
+
+<ol>
+  <li align="justify" style="margin-bottom: 8px;"><b> Joint names </b> ( <code>solve()</code> in <code>src/planner_manager.cpp</code> ) : currently Arm A uses <code>big_joint_1~6</code> and Arm B uses <code>small_joint_1~6</code>; change these to the actual joint names in your SRDF.</li>
+  <li align="justify" style="margin-bottom: 8px;"><b> planning group </b> : solve uses <code>req.group_name</code> ; verify the group definition in your SRDF.</li>
+  <li align="justify" style="margin-bottom: 8px;"><b> Robot base </b> ( the constructor in <code>avoidance_system.cpp</code> ) : currently Arm A is <code>Ty(700)Rz(180)</code> and Arm B is <code>Ty(-700)</code> , with the two arms facing each other 1400 mm apart — adjust to your actual placement.</li>
+  <li align="justify" style="margin-bottom: 8px;"><b> Bounding-sphere parameters </b> ( the <code>BUBBLES_*</code> / <code>PEDESTAL_*</code> constants in <code>newton_solver.cpp</code> ) : the sphere coordinates and radii of RA610/RA605 — confirm them against your actual robot model.</li>
+</ol>
+
+---
+
+## License
+
+<p align="justify">
 MIT
+</p>
