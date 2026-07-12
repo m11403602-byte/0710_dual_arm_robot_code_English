@@ -35,8 +35,8 @@ struct CollisionIndices {
 
 // iter_log entry (snapshot of each outer repair round, for export)
 struct IterLogEntry {
-  Trajectory          traj_in;       // pre-repair trajectory
-  Trajectory          traj_out;      // post-repair trajectory
+  Trajectory          traj_in;        // pre-repair trajectory
+  Trajectory          traj_out;       // post-repair trajectory
   Eigen::VectorXd     path_D_max_in;  // per-step max_D before repair
   Eigen::VectorXd     path_D_max_out; // per-step max_D after repair
   std::vector<int>    targets_in;     // 5 points (pre-repair index)
@@ -120,7 +120,7 @@ private:
   double lag_lam0_       = 30.0;    // λ_0 (⚠ the comment says 10, the actual code = 30)
   double lag_s0_         = 1.0;     // S_0 (S²=1)
   double lag_tol_phys_   = 0.01;    // max_D ≤ θ + margin
-  double lag_tol_stable_ = 0.01;   // |Δmax_D| ≤ TOL_STABLE
+  double lag_tol_stable_ = 0.01;    // |Δmax_D| ≤ TOL_STABLE
   int    lag_max_iter_   = 500;
   std::vector<double> refinement_history_;
   std::vector<double> time_ms_;            // inner-loop time per round
